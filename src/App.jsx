@@ -17,10 +17,12 @@ import TransactionCount from './components/TransactionCount'
 import supabase from './supabaseClient'
 import { I18nContext, getMessages } from './i18n'
 
-const initialData = { shop:{ name:'Salon HFafa', phone:'0555000000', address:'Alger' }, barbers:[{id:'b1',name:'Yacine',phone:'0555 00 11 22',rate:60,code:'HF-1001'},{id:'b2',name:'Karim',phone:'0555 00 33 44',rate:50,code:'HF-1002'},{id:'b3',name:'Sami',phone:'0555 00 55 66',rate:70,code:'HF-1003'}], transactions:[], admin:{phone:'',password:''} }
+const initialData = { shop:{ name:'Salon HFafa', phone:'0555000000', address:'Alger' }, barbers:[{id:'0f8d0d67-5d30-4fb7-bcf6-0af7ace3d6c1',name:'Yacine',phone:'0555 00 11 22',rate:60,code:'HF-1001'},{id:'f164a40d-cd17-4f7d-a6db-49679a55cc46',name:'Karim',phone:'0555 00 33 44',rate:50,code:'HF-1002'},{id:'6a9af187-d85d-46ba-8e2d-4c5f3321df00',name:'Sami',phone:'0555 00 55 66',rate:70,code:'HF-1003'}], transactions:[], admin:{id:'',phone:'',password:''} }
 const services = [['Coupe',1200],['Barbe',700],['VIP',2200],['Coloration',3000],['Soin',900],['Enfant',600]]
 const arServices = ['قص الشعر','اللحية','VIP','صبغة','عناية','الأطفال']
 const normalizePhone = (value = '') => String(value).replace(/\D/g, '')
+const isUuid = (value = '') => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value))
+const ensureUuid = (value) => isUuid(value) ? value : crypto.randomUUID()
 const makeAdminEmail = (phone) => `${normalizePhone(phone || 'admin').replace(/[^a-zA-Z0-9]/g, '') || 'admin'}@hfafa.local`
 const money = (value) => `${new Intl.NumberFormat('fr-DZ',{maximumFractionDigits:0}).format(value)} DA`
 const copy = (ar) => ar ? { dashboard:'لوحة التحكم', hello:'مرحباً، المدير', revenue:'رقم الأعمال', profit:'ربح الصالون', commissions:'العمولات المستحقة', management:'إدارة الصالون', manageBarbers:'إدارة الحلاقين', manageText:'إضافة وتعديل ومتابعة فريقك', dailySummary:'ملخص اليوم', summaryText:'الإيرادات والعمولات حسب كل حلاق', performance:'أداء الفريق', barbers:'حلاقون', services:'خدمات', commission:'العمولة', barberManagement:'إدارة الحلاقين', addBarber:'إضافة حلاق', fullName:'الاسم الكامل', phone:'الهاتف', loginCode:'رمز الدخول الذي تم إنشاؤه', commissionRate:'نسبة العمولة (%)', cancel:'إلغاء', saveChanges:'حفظ التعديلات', add:'إضافة الحلاق', team:'فريقك', members:'أعضاء', edit:'تعديل', delete:'حذف', summary:'ملخص اليوم', income:'الإيرادات', salonShare:'حصة الصالون', details:'التفاصيل حسب الحلاق', payouts:'للدفع', workspace:'مساحتي', newService:'خدمة جديدة', stats:'إحصائياتي', recordService:'تسجيل خدمة', customer:'اسم العميل (اختياري)', amount:'المبلغ المقبوض (دج)', note:'ملاحظة (اختيارية)', myCommission:'عمولتك:', saveService:'حفظ الخدمة', myRevenue:'رقم أعمالي', clients:'زبائني', latest:'آخر الخدمات', unnamed:'زبون بدون اسم', none:'لا توجد خدمات مسجلة اليوم.', invalidAmount:'أدخل مبلغاً صحيحاً.', saved:'تم تسجيل الخدمة بنجاح.', settings:'الإعدادات', about:'حول التطبيق', aboutText:'تطبيق لإدارة الصالون والعمولات والإيرادات اليومية.', shopInfo:'معلومات الصالون', shopName:'اسم الصالون', address:'العنوان', save:'حفظ', profile:'ملفي الشخصي', name:'الاسم', code:'الرمز', logout:'خروج', date:new Date().toLocaleDateString('ar-DZ',{weekday:'long',day:'numeric',month:'long'}) } : { dashboard:'Tableau de bord', hello:'Bonjour, propriétaire', revenue:'Chiffre d’affaires', profit:'Bénéfice du salon', commissions:'Commissions à verser', management:'Gestion du salon', manageBarbers:'Gérer les barbiers', manageText:'Ajouter, modifier et suivre votre équipe', dailySummary:'Résumé de la journée', summaryText:'Revenus, commissions et détail par barbier', performance:'Performance de l’équipe', barbers:'barbiers', services:'prestations', commission:'Commission', barberManagement:'Gestion des barbiers', addBarber:'Ajouter un barbier', fullName:'Nom complet', phone:'Téléphone', loginCode:'Code de connexion généré', commissionRate:'Taux de commission (%)', cancel:'Annuler', saveChanges:'Enregistrer les changements', add:'Ajouter le barbier', team:'Votre équipe', members:'membres', edit:'Modifier', delete:'Supprimer', summary:'Résumé de la journée', income:'Revenus', salonShare:'Part salon', details:'Détail par barbier', payouts:'À verser', workspace:'Mon espace', newService:'Nouvelle prestation', stats:'Mes statistiques', recordService:'Enregistrer une prestation', customer:'Nom du client (facultatif)', amount:'Montant encaissé (DA)', note:'Note (facultatif)', myCommission:'Votre commission :', saveService:'Enregistrer la prestation', myRevenue:'Mon chiffre d’affaires', clients:'Mes clients', latest:'Dernières prestations', unnamed:'Client sans nom', none:'Aucune prestation enregistrée aujourd’hui.', invalidAmount:'Saisissez un montant valide.', saved:'Prestation enregistrée avec succès.', settings:'Paramètres', about:'À propos', aboutText:'Application de gestion de salon, des commissions et des revenus quotidiens.', shopInfo:'Informations du salon', shopName:'Nom du salon', address:'Adresse', save:'Enregistrer', profile:'Mon profil', name:'Nom', code:'Code', logout:'Se déconnecter', date:new Date().toLocaleDateString('fr-DZ',{weekday:'long',day:'numeric',month:'long'}) }
@@ -78,6 +80,7 @@ async function loadFromSupabase() {
         address: profile?.shop_address || '',
       },
       admin: {
+        id: profile?.id || '',
         phone: profile?.phone || '',
         password: profile?.password || '',
         firstName: profile?.first_name || '',
@@ -97,7 +100,7 @@ async function syncToSupabase(data) {
   try {
     if (data.shop || data.admin) {
       const profilePayload = {
-        id: crypto.randomUUID(),
+        id: ensureUuid(data.admin?.id || crypto.randomUUID()),
         first_name: data.admin?.firstName || '',
         last_name: data.admin?.lastName || '',
         phone: data.admin?.phone || data.shop?.phone || '',
@@ -113,8 +116,8 @@ async function syncToSupabase(data) {
 
     if (Array.isArray(data.barbers) && data.barbers.length) {
       const barbersPayload = data.barbers.map((barber) => ({
-        id: barber.id || crypto.randomUUID(),
-        admin_id: barber.adminId || null,
+        id: ensureUuid(barber.id || crypto.randomUUID()),
+        admin_id: barber.adminId || data.admin?.id || null,
         full_name: barber.name || '',
         phone: barber.phone || '',
         commission_rate: barber.rate ?? 0,
@@ -147,17 +150,29 @@ async function syncToSupabase(data) {
 }
 
 function App() {
-  const [data,setData] = useState(() => { try { return JSON.parse(localStorage.getItem('hfafa-data')) || initialData } catch { return initialData } }); const [screen,setScreen] = useState('role'); const [session,setSession] = useState(null); const [toast,setToast] = useState(''); const [locale,setLocale] = useState(() => localStorage.getItem('hfafa-locale') || 'fr'); const [theme,setTheme] = useState(() => localStorage.getItem('hfafa-theme') || 'light')
+  const [data,setData] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('hfafa-data'))
+      if (!saved) return initialData
+      return {
+        ...saved,
+        admin: { ...initialData.admin, ...saved.admin, id: saved.admin?.id || initialData.admin.id },
+        barbers: (saved.barbers || []).map((barber) => ({ ...barber, id: isUuid(barber.id) ? barber.id : ensureUuid(barber.id), adminId: barber.adminId || saved.admin?.id || null })),
+      }
+    } catch {
+      return initialData
+    }
+  }); const [screen,setScreen] = useState('role'); const [session,setSession] = useState(null); const [toast,setToast] = useState(''); const [locale,setLocale] = useState(() => localStorage.getItem('hfafa-locale') || 'fr'); const [theme,setTheme] = useState(() => localStorage.getItem('hfafa-theme') || 'light')
   useEffect(() => { let active = true; const loadRemote = async () => { const remoteData = await loadFromSupabase(); if (remoteData && active) { setData((current) => ({ ...current, ...remoteData, barbers: remoteData.barbers || current.barbers, transactions: remoteData.transactions || current.transactions })) } }; loadRemote(); return () => { active = false } }, [])
   useEffect(() => localStorage.setItem('hfafa-data',JSON.stringify(data)),[data]); useEffect(() => { localStorage.setItem('hfafa-locale',locale); document.documentElement.lang=locale; document.documentElement.dir=locale==='ar'?'rtl':'ltr' },[locale]); useEffect(() => { localStorage.setItem('hfafa-theme',theme); document.documentElement.dataset.theme=theme },[theme]); useEffect(() => { if(!toast)return; const id=setTimeout(() => setToast(''),3200); return () => clearTimeout(id) },[toast]); useEffect(() => { if(!session && !['role','admin-login','register','barber-login'].includes(screen)) setScreen('role') },[session,screen]); useEffect(() => { if(session?.role==='barber' && screen==='dashboard') setScreen('barber-workspace') },[session,screen]); useEffect(() => { syncToSupabase(data) }, [data])
-  const totals=useMemo(() => data.transactions.reduce((sum,txn) => ({revenue:sum.revenue+txn.amount,barber:sum.barber+txn.commission}),{revenue:0,barber:0}),[data.transactions]); const logout=() => {setSession(null);setScreen('role')}; const addBarber=(barber) => setData((current) => ({...current,barbers:[...current.barbers,{...barber,id:barber.id||crypto.randomUUID()}]})); const updateBarber=(id,changes) => setData((current) => ({...current,barbers:current.barbers.map((b) => b.id===id?{...b,...changes}:b)})); const deleteBarber=(id) => setData((current) => ({...current,barbers:current.barbers.filter((b) => b.id!==id),transactions:current.transactions.filter((t) => t.barberId!==id)})); const addTransaction=(txn) => setData((current) => ({...current,transactions:[{...txn,id:crypto.randomUUID(),createdAt:Date.now()},...current.transactions]})); const ar=locale==='ar'; const l=copy(ar)
+  const totals=useMemo(() => data.transactions.reduce((sum,txn) => ({revenue:sum.revenue+txn.amount,barber:sum.barber+txn.commission}),{revenue:0,barber:0}),[data.transactions]); const logout=() => {setSession(null);setScreen('role')}; const addBarber=(barber) => setData((current) => ({...current,barbers:[...current.barbers,{...barber,id: ensureUuid(barber.id || crypto.randomUUID()),adminId: barber.adminId || current.admin?.id || null}]})); const updateBarber=(id,changes) => setData((current) => ({...current,barbers:current.barbers.map((b) => b.id===id?{...b,...changes,adminId: b.adminId || current.admin?.id || null}:b)})); const deleteBarber=(id) => setData((current) => ({...current,barbers:current.barbers.filter((b) => b.id!==id),transactions:current.transactions.filter((t) => t.barberId!==id)})); const addTransaction=(txn) => setData((current) => ({...current,transactions:[{...txn,id:crypto.randomUUID(),createdAt:Date.now()},...current.transactions]})); const ar=locale==='ar'; const l=copy(ar)
   const handleAdminLogin = async (phone, password) => {
     const queryPhone = normalizePhone(phone)
 
     const localAdminPhone = normalizePhone(data?.admin?.phone || '')
     if (localAdminPhone === queryPhone && String(data?.admin?.password || '') === String(password)) {
       setData((current) => ({ ...current, admin: { ...current.admin, phone: current.admin.phone, password: current.admin.password } }))
-      setSession({ role: 'admin' })
+      setSession({ role: 'admin', adminId: data?.admin?.id || null })
       setScreen('dashboard')
       return
     }
@@ -175,8 +190,8 @@ function App() {
         return
       }
 
-      setData((current) => ({ ...current, admin: { phone: profile.phone, password: profile.password, firstName: profile.first_name || '', lastName: profile.last_name || '' }, shop: { name: profile.shop_name || current.shop.name, phone: profile.phone || current.shop.phone, address: profile.shop_address || current.shop.address } }))
-      setSession({ role: 'admin' })
+      setData((current) => ({ ...current, admin: { id: profile.id, phone: profile.phone, password: profile.password, firstName: profile.first_name || '', lastName: profile.last_name || '' }, shop: { name: profile.shop_name || current.shop.name, phone: profile.phone || current.shop.phone, address: profile.shop_address || current.shop.address } }))
+      setSession({ role: 'admin', adminId: profile.id })
       setScreen('dashboard')
     } catch {
       setToast(ar ? 'رقم الهاتف غير مسجل.' : 'Numéro non enregistré.')
@@ -212,7 +227,7 @@ function App() {
         throw authError
       }
 
-      const userId = authData?.user?.id || crypto.randomUUID()
+      const userId = ensureUuid(authData?.user?.id || crypto.randomUUID())
       const payload = {
         id: userId,
         first_name: admin.firstName || '',
@@ -230,7 +245,7 @@ function App() {
         throw profileError
       }
 
-      setData((current) => ({ ...current, admin: safeAdmin, shop: safeShop }))
+      setData((current) => ({ ...current, admin: { ...safeAdmin, id: userId }, shop: safeShop }))
       setToast(ar ? 'تم إنشاء الحساب. سجّل الدخول.' : 'Compte administrateur créé. Connectez-vous.')
       setScreen('admin-login')
     } catch (error) {
