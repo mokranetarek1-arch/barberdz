@@ -21,6 +21,7 @@ const initialData = { shop:{ name:'Salon HFafa', phone:'0555000000', address:'Al
 const services = [['Coupe',1200],['Barbe',700],['VIP',2200],['Coloration',3000],['Soin',900],['Enfant',600]]
 const arServices = ['قص الشعر','اللحية','VIP','صبغة','عناية','الأطفال']
 const normalizePhone = (value = '') => String(value).replace(/\s+/g, '').replace(/^\+/, '')
+const makeAdminEmail = (phone) => `${normalizePhone(phone || 'admin').replace(/[^a-zA-Z0-9]/g, '') || 'admin'}@hfafa.local`
 const money = (value) => `${new Intl.NumberFormat('fr-DZ',{maximumFractionDigits:0}).format(value)} DA`
 const copy = (ar) => ar ? { dashboard:'لوحة التحكم', hello:'مرحباً، المدير', revenue:'رقم الأعمال', profit:'ربح الصالون', commissions:'العمولات المستحقة', management:'إدارة الصالون', manageBarbers:'إدارة الحلاقين', manageText:'إضافة وتعديل ومتابعة فريقك', dailySummary:'ملخص اليوم', summaryText:'الإيرادات والعمولات حسب كل حلاق', performance:'أداء الفريق', barbers:'حلاقون', services:'خدمات', commission:'العمولة', barberManagement:'إدارة الحلاقين', addBarber:'إضافة حلاق', fullName:'الاسم الكامل', phone:'الهاتف', loginCode:'رمز الدخول الذي تم إنشاؤه', commissionRate:'نسبة العمولة (%)', cancel:'إلغاء', saveChanges:'حفظ التعديلات', add:'إضافة الحلاق', team:'فريقك', members:'أعضاء', edit:'تعديل', delete:'حذف', summary:'ملخص اليوم', income:'الإيرادات', salonShare:'حصة الصالون', details:'التفاصيل حسب الحلاق', payouts:'للدفع', workspace:'مساحتي', newService:'خدمة جديدة', stats:'إحصائياتي', recordService:'تسجيل خدمة', customer:'اسم العميل (اختياري)', amount:'المبلغ المقبوض (دج)', note:'ملاحظة (اختيارية)', myCommission:'عمولتك:', saveService:'حفظ الخدمة', myRevenue:'رقم أعمالي', clients:'زبائني', latest:'آخر الخدمات', unnamed:'زبون بدون اسم', none:'لا توجد خدمات مسجلة اليوم.', invalidAmount:'أدخل مبلغاً صحيحاً.', saved:'تم تسجيل الخدمة بنجاح.', settings:'الإعدادات', about:'حول التطبيق', aboutText:'تطبيق لإدارة الصالون والعمولات والإيرادات اليومية.', shopInfo:'معلومات الصالون', shopName:'اسم الصالون', address:'العنوان', save:'حفظ', profile:'ملفي الشخصي', name:'الاسم', code:'الرمز', logout:'خروج', date:new Date().toLocaleDateString('ar-DZ',{weekday:'long',day:'numeric',month:'long'}) } : { dashboard:'Tableau de bord', hello:'Bonjour, propriétaire', revenue:'Chiffre d’affaires', profit:'Bénéfice du salon', commissions:'Commissions à verser', management:'Gestion du salon', manageBarbers:'Gérer les barbiers', manageText:'Ajouter, modifier et suivre votre équipe', dailySummary:'Résumé de la journée', summaryText:'Revenus, commissions et détail par barbier', performance:'Performance de l’équipe', barbers:'barbiers', services:'prestations', commission:'Commission', barberManagement:'Gestion des barbiers', addBarber:'Ajouter un barbier', fullName:'Nom complet', phone:'Téléphone', loginCode:'Code de connexion généré', commissionRate:'Taux de commission (%)', cancel:'Annuler', saveChanges:'Enregistrer les changements', add:'Ajouter le barbier', team:'Votre équipe', members:'membres', edit:'Modifier', delete:'Supprimer', summary:'Résumé de la journée', income:'Revenus', salonShare:'Part salon', details:'Détail par barbier', payouts:'À verser', workspace:'Mon espace', newService:'Nouvelle prestation', stats:'Mes statistiques', recordService:'Enregistrer une prestation', customer:'Nom du client (facultatif)', amount:'Montant encaissé (DA)', note:'Note (facultatif)', myCommission:'Votre commission :', saveService:'Enregistrer la prestation', myRevenue:'Mon chiffre d’affaires', clients:'Mes clients', latest:'Dernières prestations', unnamed:'Client sans nom', none:'Aucune prestation enregistrée aujourd’hui.', invalidAmount:'Saisissez un montant valide.', saved:'Prestation enregistrée avec succès.', settings:'Paramètres', about:'À propos', aboutText:'Application de gestion de salon, des commissions et des revenus quotidiens.', shopInfo:'Informations du salon', shopName:'Nom du salon', address:'Adresse', save:'Enregistrer', profile:'Mon profil', name:'Nom', code:'Code', logout:'Se déconnecter', date:new Date().toLocaleDateString('fr-DZ',{weekday:'long',day:'numeric',month:'long'}) }
 
@@ -185,27 +186,55 @@ function App() {
   const handleRegister = async (admin, shop) => {
     const safeAdmin = { ...admin, password: admin.password || '', phone: normalizePhone(admin.phone) }
     const safeShop = { ...shop, name: shop.name || 'Salon HFafa', phone: normalizePhone(shop.phone || safeAdmin.phone), address: shop.address || '' }
-    const payload = {
-      id: crypto.randomUUID(),
-      first_name: '',
-      last_name: '',
-      phone: safeAdmin.phone,
-      password: safeAdmin.password,
-      shop_name: safeShop.name,
-      shop_address: safeShop.address,
-      role: 'admin',
-      created_at: new Date().toISOString(),
+
+    if (!safeAdmin.phone || !safeAdmin.password || safeAdmin.password.length < 6) {
+      setToast(ar ? 'أدخل رقم هاتف وكلمة مرور صحيحة.' : 'Saisis un téléphone et un mot de passe valides.')
+      return
     }
 
     try {
-      await supabase.from('profiles').insert([payload])
-    } catch {
-      // Local fallback: keep the account usable even when Supabase tables are not configured yet.
-    }
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: makeAdminEmail(safeAdmin.phone),
+        password: safeAdmin.password,
+        options: {
+          data: {
+            phone: safeAdmin.phone,
+            shop_name: safeShop.name,
+            shop_address: safeShop.address,
+            role: 'admin',
+          },
+        },
+      })
 
-    setData((current) => ({ ...current, admin: safeAdmin, shop: safeShop }))
-    setToast(ar ? 'تم إنشاء الحساب. سجّل الدخول.' : 'Compte administrateur créé. Connectez-vous.')
-    setScreen('admin-login')
+      if (authError) {
+        throw authError
+      }
+
+      const userId = authData?.user?.id || crypto.randomUUID()
+      const payload = {
+        id: userId,
+        first_name: '',
+        last_name: '',
+        phone: safeAdmin.phone,
+        password: safeAdmin.password,
+        shop_name: safeShop.name,
+        shop_address: safeShop.address,
+        role: 'admin',
+        created_at: new Date().toISOString(),
+      }
+
+      const { error: profileError } = await supabase.from('profiles').upsert([payload], { onConflict: 'id' }).select()
+      if (profileError) {
+        throw profileError
+      }
+
+      setData((current) => ({ ...current, admin: safeAdmin, shop: safeShop }))
+      setToast(ar ? 'تم إنشاء الحساب. سجّل الدخول.' : 'Compte administrateur créé. Connectez-vous.')
+      setScreen('admin-login')
+    } catch (error) {
+      const message = error?.message || (ar ? 'Échec de création du compte.' : 'La création du compte a échoué.')
+      setToast(ar ? `تعذر إنشاء الحساب: ${message}` : `Création impossible: ${message}`)
+    }
   }
 
   let content; if(screen==='role') content=<RoleScreen onChoose={(role) => setScreen(role==='admin'?'admin-login':'barber-login')} />; else if(screen==='admin-login') content=<AdminLogin data={data} onBack={() => setScreen('role')} onLogin={(phone, password) => handleAdminLogin(phone, password)} onRegister={() => setScreen('register')} />; else if(screen==='register') content=<Register onBack={() => setScreen('admin-login')} onRegister={handleRegister} />; else if(screen==='barber-login') content=<BarberLogin barbers={data.barbers} onBack={() => setScreen('role')} onLogin={(barber) => {setSession({role:'barber',barberId:barber.id});setScreen('barber-workspace')}} />; else if(screen==='dashboard') content=<Dashboard data={data} totals={totals} setScreen={setScreen} logout={logout} l={l} />; else if(screen==='barbers') content=<BarberManagement barbers={data.barbers} onBack={() => setScreen('dashboard')} onAdd={addBarber} onUpdate={updateBarber} onDelete={deleteBarber} l={l} />; else if(screen==='summary') content=<Summary data={data} totals={totals} onBack={() => setScreen('dashboard')} l={l} />; else if(screen==='settings') content=<Settings data={data} isAdmin={session?.role==='admin'} barber={data.barbers.find((b) => b.id===session?.barberId)} onBack={() => setScreen(session?.role==='admin'?'dashboard':'barber-workspace')} onSave={(shop) => {setData((current) => ({...current,shop}));setToast(ar?'تم حفظ المعلومات.':'Informations enregistrées.')}} logout={logout} l={l} />; else content=<BarberWorkspace barber={data.barbers.find((b) => b.id===session?.barberId)} transactions={data.transactions} onSave={addTransaction} onSettings={() => setScreen('settings')} logout={logout} l={l} ar={ar} />
