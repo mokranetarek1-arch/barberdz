@@ -20,6 +20,7 @@ import { I18nContext, getMessages } from './i18n'
 const initialData = { shop:{ name:'Salon HFafa', phone:'0555000000', address:'Alger' }, barbers:[{id:'b1',name:'Yacine',phone:'0555 00 11 22',rate:60,code:'HF-1001'},{id:'b2',name:'Karim',phone:'0555 00 33 44',rate:50,code:'HF-1002'},{id:'b3',name:'Sami',phone:'0555 00 55 66',rate:70,code:'HF-1003'}], transactions:[], admin:{phone:'',password:''} }
 const services = [['Coupe',1200],['Barbe',700],['VIP',2200],['Coloration',3000],['Soin',900],['Enfant',600]]
 const arServices = ['قص الشعر','اللحية','VIP','صبغة','عناية','الأطفال']
+const normalizePhone = (value = '') => String(value).replace(/\s+/g, '').replace(/^\+/, '')
 const money = (value) => `${new Intl.NumberFormat('fr-DZ',{maximumFractionDigits:0}).format(value)} DA`
 const copy = (ar) => ar ? { dashboard:'لوحة التحكم', hello:'مرحباً، المدير', revenue:'رقم الأعمال', profit:'ربح الصالون', commissions:'العمولات المستحقة', management:'إدارة الصالون', manageBarbers:'إدارة الحلاقين', manageText:'إضافة وتعديل ومتابعة فريقك', dailySummary:'ملخص اليوم', summaryText:'الإيرادات والعمولات حسب كل حلاق', performance:'أداء الفريق', barbers:'حلاقون', services:'خدمات', commission:'العمولة', barberManagement:'إدارة الحلاقين', addBarber:'إضافة حلاق', fullName:'الاسم الكامل', phone:'الهاتف', loginCode:'رمز الدخول الذي تم إنشاؤه', commissionRate:'نسبة العمولة (%)', cancel:'إلغاء', saveChanges:'حفظ التعديلات', add:'إضافة الحلاق', team:'فريقك', members:'أعضاء', edit:'تعديل', delete:'حذف', summary:'ملخص اليوم', income:'الإيرادات', salonShare:'حصة الصالون', details:'التفاصيل حسب الحلاق', payouts:'للدفع', workspace:'مساحتي', newService:'خدمة جديدة', stats:'إحصائياتي', recordService:'تسجيل خدمة', customer:'اسم العميل (اختياري)', amount:'المبلغ المقبوض (دج)', note:'ملاحظة (اختيارية)', myCommission:'عمولتك:', saveService:'حفظ الخدمة', myRevenue:'رقم أعمالي', clients:'زبائني', latest:'آخر الخدمات', unnamed:'زبون بدون اسم', none:'لا توجد خدمات مسجلة اليوم.', invalidAmount:'أدخل مبلغاً صحيحاً.', saved:'تم تسجيل الخدمة بنجاح.', settings:'الإعدادات', about:'حول التطبيق', aboutText:'تطبيق لإدارة الصالون والعمولات والإيرادات اليومية.', shopInfo:'معلومات الصالون', shopName:'اسم الصالون', address:'العنوان', save:'حفظ', profile:'ملفي الشخصي', name:'الاسم', code:'الرمز', logout:'خروج', date:new Date().toLocaleDateString('ar-DZ',{weekday:'long',day:'numeric',month:'long'}) } : { dashboard:'Tableau de bord', hello:'Bonjour, propriétaire', revenue:'Chiffre d’affaires', profit:'Bénéfice du salon', commissions:'Commissions à verser', management:'Gestion du salon', manageBarbers:'Gérer les barbiers', manageText:'Ajouter, modifier et suivre votre équipe', dailySummary:'Résumé de la journée', summaryText:'Revenus, commissions et détail par barbier', performance:'Performance de l’équipe', barbers:'barbiers', services:'prestations', commission:'Commission', barberManagement:'Gestion des barbiers', addBarber:'Ajouter un barbier', fullName:'Nom complet', phone:'Téléphone', loginCode:'Code de connexion généré', commissionRate:'Taux de commission (%)', cancel:'Annuler', saveChanges:'Enregistrer les changements', add:'Ajouter le barbier', team:'Votre équipe', members:'membres', edit:'Modifier', delete:'Supprimer', summary:'Résumé de la journée', income:'Revenus', salonShare:'Part salon', details:'Détail par barbier', payouts:'À verser', workspace:'Mon espace', newService:'Nouvelle prestation', stats:'Mes statistiques', recordService:'Enregistrer une prestation', customer:'Nom du client (facultatif)', amount:'Montant encaissé (DA)', note:'Note (facultatif)', myCommission:'Votre commission :', saveService:'Enregistrer la prestation', myRevenue:'Mon chiffre d’affaires', clients:'Mes clients', latest:'Dernières prestations', unnamed:'Client sans nom', none:'Aucune prestation enregistrée aujourd’hui.', invalidAmount:'Saisissez un montant valide.', saved:'Prestation enregistrée avec succès.', settings:'Paramètres', about:'À propos', aboutText:'Application de gestion de salon, des commissions et des revenus quotidiens.', shopInfo:'Informations du salon', shopName:'Nom du salon', address:'Adresse', save:'Enregistrer', profile:'Mon profil', name:'Nom', code:'Code', logout:'Se déconnecter', date:new Date().toLocaleDateString('fr-DZ',{weekday:'long',day:'numeric',month:'long'}) }
 
@@ -151,21 +152,34 @@ function App() {
   const totals=useMemo(() => data.transactions.reduce((sum,txn) => ({revenue:sum.revenue+txn.amount,barber:sum.barber+txn.commission}),{revenue:0,barber:0}),[data.transactions]); const logout=() => {setSession(null);setScreen('role')}; const addBarber=(barber) => setData((current) => ({...current,barbers:[...current.barbers,{...barber,id:barber.id||crypto.randomUUID()}]})); const updateBarber=(id,changes) => setData((current) => ({...current,barbers:current.barbers.map((b) => b.id===id?{...b,...changes}:b)})); const deleteBarber=(id) => setData((current) => ({...current,barbers:current.barbers.filter((b) => b.id!==id),transactions:current.transactions.filter((t) => t.barberId!==id)})); const addTransaction=(txn) => setData((current) => ({...current,transactions:[{...txn,id:crypto.randomUUID(),createdAt:Date.now()},...current.transactions]})); const ar=locale==='ar'; const l=copy(ar)
   const handleAdminLogin = async (phone, password) => {
     const queryPhone = normalizePhone(phone)
-    const { data: rows, error } = await supabase.from('profiles').select('*').eq('phone', queryPhone)
-    if (error || !rows || rows.length === 0) {
+
+    const localAdminPhone = normalizePhone(data?.admin?.phone || '')
+    if (localAdminPhone === queryPhone && String(data?.admin?.password || '') === String(password)) {
+      setData((current) => ({ ...current, admin: { ...current.admin, phone: current.admin.phone, password: current.admin.password } }))
+      setSession({ role: 'admin' })
+      setScreen('dashboard')
+      return
+    }
+
+    try {
+      const { data: rows, error } = await supabase.from('profiles').select('*').eq('phone', queryPhone)
+      if (error || !rows || rows.length === 0) {
+        setToast(ar ? 'رقم الهاتف غير مسجل.' : 'Numéro non enregistré.')
+        return
+      }
+
+      const profile = rows[0]
+      if (profile.password !== password) {
+        setToast(ar ? 'كلمة المرور غير صحيحة.' : 'Mot de passe incorrect.')
+        return
+      }
+
+      setData((current) => ({ ...current, admin: { phone: profile.phone, password: profile.password, firstName: profile.first_name || '', lastName: profile.last_name || '' }, shop: { name: profile.shop_name || current.shop.name, phone: profile.phone || current.shop.phone, address: profile.shop_address || current.shop.address } }))
+      setSession({ role: 'admin' })
+      setScreen('dashboard')
+    } catch {
       setToast(ar ? 'رقم الهاتف غير مسجل.' : 'Numéro non enregistré.')
-      return
     }
-
-    const profile = rows[0]
-    if (profile.password !== password) {
-      setToast(ar ? 'كلمة المرور غير صحيحة.' : 'Mot de passe incorrect.')
-      return
-    }
-
-    setData((current) => ({ ...current, admin: { phone: profile.phone, password: profile.password, firstName: profile.first_name || '', lastName: profile.last_name || '' }, shop: { name: profile.shop_name || current.shop.name, phone: profile.phone || current.shop.phone, address: profile.shop_address || current.shop.address } }))
-    setSession({ role: 'admin' })
-    setScreen('dashboard')
   }
 
   const handleRegister = async (admin, shop) => {
@@ -183,10 +197,10 @@ function App() {
       created_at: new Date().toISOString(),
     }
 
-    const { error } = await supabase.from('profiles').insert([payload])
-    if (error) {
-      setToast(ar ? 'إعداد قاعدة البيانات غير مكتمل.' : 'La base Supabase n’est pas encore configurée.')
-      return
+    try {
+      await supabase.from('profiles').insert([payload])
+    } catch {
+      // Local fallback: keep the account usable even when Supabase tables are not configured yet.
     }
 
     setData((current) => ({ ...current, admin: safeAdmin, shop: safeShop }))
