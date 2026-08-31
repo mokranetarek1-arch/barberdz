@@ -99,6 +99,7 @@ async function syncToSupabase(data) {
         first_name: data.admin?.firstName || '',
         last_name: data.admin?.lastName || '',
         phone: data.admin?.phone || data.shop?.phone || '',
+        password: data.admin?.password || '',
         shop_name: data.shop?.name || '',
         shop_address: data.shop?.address || '',
         role: 'admin',
@@ -148,7 +149,52 @@ function App() {
   useEffect(() => { let active = true; const loadRemote = async () => { const remoteData = await loadFromSupabase(); if (remoteData && active) { setData((current) => ({ ...current, ...remoteData, barbers: remoteData.barbers || current.barbers, transactions: remoteData.transactions || current.transactions })) } }; loadRemote(); return () => { active = false } }, [])
   useEffect(() => localStorage.setItem('hfafa-data',JSON.stringify(data)),[data]); useEffect(() => { localStorage.setItem('hfafa-locale',locale); document.documentElement.lang=locale; document.documentElement.dir=locale==='ar'?'rtl':'ltr' },[locale]); useEffect(() => { localStorage.setItem('hfafa-theme',theme); document.documentElement.dataset.theme=theme },[theme]); useEffect(() => { if(!toast)return; const id=setTimeout(() => setToast(''),3200); return () => clearTimeout(id) },[toast]); useEffect(() => { if(!session && !['role','admin-login','register','barber-login'].includes(screen)) setScreen('role') },[session,screen]); useEffect(() => { if(session?.role==='barber' && screen==='dashboard') setScreen('barber-workspace') },[session,screen]); useEffect(() => { syncToSupabase(data) }, [data])
   const totals=useMemo(() => data.transactions.reduce((sum,txn) => ({revenue:sum.revenue+txn.amount,barber:sum.barber+txn.commission}),{revenue:0,barber:0}),[data.transactions]); const logout=() => {setSession(null);setScreen('role')}; const addBarber=(barber) => setData((current) => ({...current,barbers:[...current.barbers,{...barber,id:barber.id||crypto.randomUUID()}]})); const updateBarber=(id,changes) => setData((current) => ({...current,barbers:current.barbers.map((b) => b.id===id?{...b,...changes}:b)})); const deleteBarber=(id) => setData((current) => ({...current,barbers:current.barbers.filter((b) => b.id!==id),transactions:current.transactions.filter((t) => t.barberId!==id)})); const addTransaction=(txn) => setData((current) => ({...current,transactions:[{...txn,id:crypto.randomUUID(),createdAt:Date.now()},...current.transactions]})); const ar=locale==='ar'; const l=copy(ar)
-  let content; if(screen==='role') content=<RoleScreen onChoose={(role) => setScreen(role==='admin'?'admin-login':'barber-login')} />; else if(screen==='admin-login') content=<AdminLogin data={data} onBack={() => setScreen('role')} onLogin={() => {setSession({role:'admin'});setScreen('dashboard')}} onRegister={() => setScreen('register')} />; else if(screen==='register') content=<Register onBack={() => setScreen('admin-login')} onRegister={(admin,shop) => {setData((current) => ({...current,admin,shop}));setToast(ar?'تم إنشاء الحساب. سجّل الدخول.':'Compte administrateur créé. Connectez-vous.');setScreen('admin-login')}} />; else if(screen==='barber-login') content=<BarberLogin barbers={data.barbers} onBack={() => setScreen('role')} onLogin={(barber) => {setSession({role:'barber',barberId:barber.id});setScreen('barber-workspace')}} />; else if(screen==='dashboard') content=<Dashboard data={data} totals={totals} setScreen={setScreen} logout={logout} l={l} />; else if(screen==='barbers') content=<BarberManagement barbers={data.barbers} onBack={() => setScreen('dashboard')} onAdd={addBarber} onUpdate={updateBarber} onDelete={deleteBarber} l={l} />; else if(screen==='summary') content=<Summary data={data} totals={totals} onBack={() => setScreen('dashboard')} l={l} />; else if(screen==='settings') content=<Settings data={data} isAdmin={session?.role==='admin'} barber={data.barbers.find((b) => b.id===session?.barberId)} onBack={() => setScreen(session?.role==='admin'?'dashboard':'barber-workspace')} onSave={(shop) => {setData((current) => ({...current,shop}));setToast(ar?'تم حفظ المعلومات.':'Informations enregistrées.')}} logout={logout} l={l} />; else content=<BarberWorkspace barber={data.barbers.find((b) => b.id===session?.barberId)} transactions={data.transactions} onSave={addTransaction} onSettings={() => setScreen('settings')} logout={logout} l={l} ar={ar} />
+  const handleAdminLogin = async (phone, password) => {
+    const queryPhone = normalizePhone(phone)
+    const { data: rows, error } = await supabase.from('profiles').select('*').eq('phone', queryPhone)
+    if (error || !rows || rows.length === 0) {
+      setToast(ar ? 'رقم الهاتف غير مسجل.' : 'Numéro non enregistré.')
+      return
+    }
+
+    const profile = rows[0]
+    if (profile.password !== password) {
+      setToast(ar ? 'كلمة المرور غير صحيحة.' : 'Mot de passe incorrect.')
+      return
+    }
+
+    setData((current) => ({ ...current, admin: { phone: profile.phone, password: profile.password, firstName: profile.first_name || '', lastName: profile.last_name || '' }, shop: { name: profile.shop_name || current.shop.name, phone: profile.phone || current.shop.phone, address: profile.shop_address || current.shop.address } }))
+    setSession({ role: 'admin' })
+    setScreen('dashboard')
+  }
+
+  const handleRegister = async (admin, shop) => {
+    const safeAdmin = { ...admin, password: admin.password || '', phone: normalizePhone(admin.phone) }
+    const safeShop = { ...shop, name: shop.name || 'Salon HFafa', phone: normalizePhone(shop.phone || safeAdmin.phone), address: shop.address || '' }
+    const payload = {
+      id: crypto.randomUUID(),
+      first_name: '',
+      last_name: '',
+      phone: safeAdmin.phone,
+      password: safeAdmin.password,
+      shop_name: safeShop.name,
+      shop_address: safeShop.address,
+      role: 'admin',
+      created_at: new Date().toISOString(),
+    }
+
+    const { error } = await supabase.from('profiles').insert([payload])
+    if (error) {
+      setToast(ar ? 'إعداد قاعدة البيانات غير مكتمل.' : 'La base Supabase n’est pas encore configurée.')
+      return
+    }
+
+    setData((current) => ({ ...current, admin: safeAdmin, shop: safeShop }))
+    setToast(ar ? 'تم إنشاء الحساب. سجّل الدخول.' : 'Compte administrateur créé. Connectez-vous.')
+    setScreen('admin-login')
+  }
+
+  let content; if(screen==='role') content=<RoleScreen onChoose={(role) => setScreen(role==='admin'?'admin-login':'barber-login')} />; else if(screen==='admin-login') content=<AdminLogin data={data} onBack={() => setScreen('role')} onLogin={(phone, password) => handleAdminLogin(phone, password)} onRegister={() => setScreen('register')} />; else if(screen==='register') content=<Register onBack={() => setScreen('admin-login')} onRegister={handleRegister} />; else if(screen==='barber-login') content=<BarberLogin barbers={data.barbers} onBack={() => setScreen('role')} onLogin={(barber) => {setSession({role:'barber',barberId:barber.id});setScreen('barber-workspace')}} />; else if(screen==='dashboard') content=<Dashboard data={data} totals={totals} setScreen={setScreen} logout={logout} l={l} />; else if(screen==='barbers') content=<BarberManagement barbers={data.barbers} onBack={() => setScreen('dashboard')} onAdd={addBarber} onUpdate={updateBarber} onDelete={deleteBarber} l={l} />; else if(screen==='summary') content=<Summary data={data} totals={totals} onBack={() => setScreen('dashboard')} l={l} />; else if(screen==='settings') content=<Settings data={data} isAdmin={session?.role==='admin'} barber={data.barbers.find((b) => b.id===session?.barberId)} onBack={() => setScreen(session?.role==='admin'?'dashboard':'barber-workspace')} onSave={(shop) => {setData((current) => ({...current,shop}));setToast(ar?'تم حفظ المعلومات.':'Informations enregistrées.')}} logout={logout} l={l} />; else content=<BarberWorkspace barber={data.barbers.find((b) => b.id===session?.barberId)} transactions={data.transactions} onSave={addTransaction} onSettings={() => setScreen('settings')} logout={logout} l={l} ar={ar} />
   return <I18nContext.Provider value={{locale,t:(key) => getMessages(locale)[key]||key}}><div className={`app-layout ${session?'is-authenticated':'is-guest'}`} dir={ar?'rtl':'ltr'}>{session&&<Sidebar role={session.role} setScreen={setScreen} logout={logout} screen={screen}/>}<main className="app"><Preferences locale={locale} theme={theme} onLocaleChange={setLocale} onThemeChange={setTheme}/>{session?.role==='admin'&&<AdminCashSale onSave={addTransaction}/>} {screen==='summary'&&<TransactionCount count={data.transactions.length}/>} {content}{toast&&<div className="toast">✓ {toast}</div>}</main></div></I18nContext.Provider>
 }
 
