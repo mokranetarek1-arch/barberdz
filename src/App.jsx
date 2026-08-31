@@ -14,6 +14,8 @@ import Sidebar from './components/Sidebar'
 import Preferences from './components/Preferences'
 import AdminCashSale from './components/AdminCashSale'
 import TransactionCount from './components/TransactionCount'
+import SuperAdminDashboard from './pages/SuperAdminDashboard'
+import SubscriptionLockScreen from './components/SubscriptionLockScreen'
 import supabase from './supabaseClient'
 import { I18nContext, getMessages } from './i18n'
 
@@ -23,6 +25,16 @@ const initialData = {
   barbers: [],
   transactions: [],
   admin: { id: '', firstName: '', lastName: '', phone: '', password: '', salonCode: DEFAULT_SALON_CODE },
+}
+
+const checkSubscriptionStatus = (profile) => {
+  if (profile?.is_super_admin) return { isLocked: false, status: 'active', isSuperAdmin: true }
+  const status = profile?.subscription_status || 'pending'
+  if (status === 'blocked') return { isLocked: true, status: 'blocked', isSuperAdmin: false }
+  if (status === 'pending' || !profile?.subscription_end) return { isLocked: true, status: 'pending', isSuperAdmin: false }
+  const end = new Date(profile.subscription_end).getTime()
+  if (end < Date.now()) return { isLocked: true, status: 'expired', isSuperAdmin: false }
+  return { isLocked: false, status: 'active', isSuperAdmin: false }
 }
 const services = [['Coupe', 1200], ['Barbe', 700], ['VIP', 2200], ['Coloration', 3000], ['Soin', 900], ['Enfant', 600]]
 const arServices = ['قص الشعر', 'اللحية', 'VIP', 'صبغة', 'عناية', 'الأطفال']
@@ -82,7 +94,7 @@ async function loadFromSupabase(currentSession) {
       return null
     }
 
-    if (currentSession.role === 'admin' && currentSession.adminId) {
+    if ((currentSession.role === 'admin' || currentSession.role === 'super_admin') && currentSession.adminId) {
       const [profileRes, barbersRes, transactionsRes] = await Promise.all([
         supabase.from('profiles').select('*').eq('id', currentSession.adminId),
         supabase.from('barbers').select('*').eq('admin_id', currentSession.adminId),
@@ -95,7 +107,9 @@ async function loadFromSupabase(currentSession) {
 
       if (!profile) return null
 
+      const subStatus = checkSubscriptionStatus(profile)
       const salonCode = formatSalonCode(profile.salon_code, DEFAULT_SALON_CODE)
+
       return {
         shop: {
           name: profile.shop_name || 'Barber DZ',
@@ -103,6 +117,9 @@ async function loadFromSupabase(currentSession) {
           address: profile.shop_address || '',
           salonCode,
           adminId: profile.id,
+          subscriptionStatus: profile.subscription_status || 'pending',
+          subscriptionEnd: profile.subscription_end,
+          isSuperAdmin: Boolean(profile.is_super_admin),
         },
         admin: {
           id: profile.id,
@@ -111,9 +128,15 @@ async function loadFromSupabase(currentSession) {
           firstName: profile.first_name || '',
           lastName: profile.last_name || '',
           salonCode,
+          isSuperAdmin: Boolean(profile.is_super_admin),
+          isLocked: subStatus.isLocked,
+          lockStatus: subStatus.status,
         },
         barbers,
         transactions,
+        isSuperAdmin: Boolean(profile.is_super_admin),
+        isLocked: subStatus.isLocked,
+        lockStatus: subStatus.status,
       }
     }
 
@@ -130,16 +153,24 @@ async function loadFromSupabase(currentSession) {
       const transactions = Array.isArray(transactionsRes.data) ? transactionsRes.data.map(mapTransactionRow) : []
 
       let shop = { name: 'Barber DZ', phone: '', address: '', salonCode: DEFAULT_SALON_CODE }
+      let isLocked = false
+      let lockStatus = 'active'
+
       if (barber.adminId) {
         const { data: profiles } = await supabase.from('profiles').select('*').eq('id', barber.adminId)
         if (profiles && profiles.length > 0) {
           const p = profiles[0]
+          const sub = checkSubscriptionStatus(p)
+          isLocked = sub.isLocked
+          lockStatus = sub.status
           shop = {
             name: p.shop_name || 'Barber DZ',
             phone: p.phone || '',
             address: p.shop_address || '',
             salonCode: formatSalonCode(p.salon_code, DEFAULT_SALON_CODE),
             adminId: p.id,
+            subscriptionStatus: p.subscription_status,
+            subscriptionEnd: p.subscription_end,
           }
         }
       }
@@ -148,11 +179,14 @@ async function loadFromSupabase(currentSession) {
         shop,
         barbers: [barber],
         transactions,
+        isLocked,
+        lockStatus,
       }
     }
 
     return null
-  } catch {
+  } catch (err) {
+    console.error('[loadFromSupabase] ERROR:', err)
     return null
   }
 }
@@ -173,6 +207,8 @@ function App() {
   const [screen, setScreen] = useState(() => {
     try {
       const savedSession = JSON.parse(localStorage.getItem('hfafa-session'))
+      if (savedSession?.role === 'super_admin' || savedSession?.isSuperAdmin) return 'super-admin'
+      if (savedSession?.isLocked) return 'lock-screen'
       if (savedSession?.role === 'admin') return 'dashboard'
       if (savedSession?.role === 'barber') return 'barber-workspace'
       return 'role'
@@ -196,6 +232,14 @@ function App() {
         barbers: remoteData.barbers || [],
         transactions: remoteData.transactions || [],
       })
+      if (remoteData.isSuperAdmin && !sess.isSuperAdmin) {
+        setSession((current) => ({
+          ...current,
+          role: 'super_admin',
+          isSuperAdmin: true,
+        }))
+        setScreen('super-admin')
+      }
     }
   }
 
@@ -253,11 +297,15 @@ function App() {
   }, [toast])
 
   useEffect(() => {
-    if (!session && !['role', 'admin-login', 'register', 'barber-login'].includes(screen)) setScreen('role')
-  }, [session, screen])
-
-  useEffect(() => {
-    if (session?.role === 'barber' && screen === 'dashboard') setScreen('barber-workspace')
+    if (!session && !['role', 'admin-login', 'register', 'barber-login'].includes(screen)) {
+      setScreen('role')
+    } else if (session?.isSuperAdmin || session?.role === 'super_admin') {
+      if (screen !== 'super-admin') setScreen('super-admin')
+    } else if (session?.isLocked && screen !== 'lock-screen') {
+      setScreen('lock-screen')
+    } else if (session?.role === 'barber' && screen === 'dashboard') {
+      setScreen('barber-workspace')
+    }
   }, [session, screen])
 
   const totals = useMemo(() => data.transactions.reduce((sum, txn) => ({ revenue: sum.revenue + txn.amount, barber: sum.barber + txn.commission }), { revenue: 0, barber: 0 }), [data.transactions])
@@ -281,7 +329,7 @@ function App() {
       barbers: [...current.barbers, newBarber],
     }))
     try {
-      await supabase.from('barbers').upsert([{
+      const { error } = await supabase.from('barbers').upsert([{
         id: newBarber.id,
         admin_id: adminId,
         full_name: newBarber.name,
@@ -291,8 +339,12 @@ function App() {
         is_active: true,
         created_at: new Date().toISOString(),
       }])
-    } catch {
-      /* ignore */
+      if (error) {
+        console.error('[addBarber] Supabase error:', error)
+        setToast(ar ? 'خطأ في حفظ الحلاق في قاعدة البيانات' : 'Erreur enregistrement Supabase')
+      }
+    } catch (err) {
+      console.error('[addBarber] Exception:', err)
     }
   }
 
@@ -304,14 +356,17 @@ function App() {
     try {
       const existing = data.barbers.find((b) => b.id === id)
       const merged = { ...existing, ...changes }
-      await supabase.from('barbers').update({
+      const { error } = await supabase.from('barbers').update({
         full_name: merged.name,
         phone: merged.phone,
         commission_rate: merged.rate,
         access_code: cleanCode(merged.code || ''),
       }).eq('id', id)
-    } catch {
-      /* ignore */
+      if (error) {
+        console.error('[updateBarber] Supabase error:', error)
+      }
+    } catch (err) {
+      console.error('[updateBarber] Exception:', err)
     }
   }
 
@@ -322,10 +377,13 @@ function App() {
       transactions: current.transactions.filter((t) => t.barberId !== id),
     }))
     try {
-      await supabase.from('barbers').delete().eq('id', id)
-      await supabase.from('transactions').delete().eq('barber_id', id)
-    } catch {
-      /* ignore */
+      const { error: err1 } = await supabase.from('barbers').delete().eq('id', id)
+      const { error: err2 } = await supabase.from('transactions').delete().eq('barber_id', id)
+      if (err1 || err2) {
+        console.error('[deleteBarber] Supabase error:', err1, err2)
+      }
+    } catch (err) {
+      console.error('[deleteBarber] Exception:', err)
     }
   }
 
@@ -342,7 +400,7 @@ function App() {
       transactions: [newTxn, ...current.transactions],
     }))
     try {
-      await supabase.from('transactions').upsert([{
+      const { error } = await supabase.from('transactions').upsert([{
         id: newTxn.id,
         admin_id: adminId,
         barber_id: newTxn.barberId || null,
@@ -355,8 +413,12 @@ function App() {
         notes: newTxn.note || '',
         created_at: new Date(newTxn.createdAt).toISOString(),
       }])
-    } catch {
-      /* ignore */
+      if (error) {
+        console.error('[addTransaction] Supabase error:', error)
+        setToast(ar ? 'خطأ في حفظ المعاملة في قاعدة البيانات' : 'Erreur enregistrement Supabase')
+      }
+    } catch (err) {
+      console.error('[addTransaction] Exception:', err)
     }
   }
 
@@ -364,22 +426,49 @@ function App() {
   const l = copy(ar)
 
   const handleAdminLogin = async (phone, password) => {
-    const queryPhone = normalizePhone(phone)
+    const rawPhone = String(phone || '').trim()
 
     try {
-      const { data: rows, error } = await supabase.from('profiles').select('*').eq('phone', queryPhone)
+      const { data: rows, error } = await supabase.from('profiles').select('*')
+
       if (error || !rows || rows.length === 0) {
         setToast(ar ? 'رقم الهاتف غير مسجل.' : 'Numéro non enregistré.')
         return false
       }
 
-      const profile = rows[0]
-      if (profile.password !== password) {
+      const profile = rows.find(
+        (r) =>
+          phonesMatch(r.phone, rawPhone) ||
+          normalizePhone(r.phone) === normalizePhone(rawPhone) ||
+          r.phone === rawPhone
+      )
+
+      if (!profile) {
+        setToast(ar ? 'رقم الهاتف غير مسجل.' : 'Numéro non enregistré.')
+        return false
+      }
+
+      if (String(profile.password).trim() !== String(password).trim()) {
         setToast(ar ? 'كلمة المرور غير صحيحة.' : 'Mot de passe incorrect.')
         return false
       }
 
-      const savedSalonCode = formatSalonCode(profile?.salon_code, DEFAULT_SALON_CODE)
+      const isSuperAdmin = Boolean(profile.is_super_admin) || profile.role === 'super_admin'
+      const sub = checkSubscriptionStatus(profile)
+      const savedSalonCode = formatSalonCode(profile?.salon_code, isSuperAdmin ? 'SUPER-ADMIN' : DEFAULT_SALON_CODE)
+
+      if (isSuperAdmin) {
+        const newSession = {
+          role: 'super_admin',
+          adminId: profile.id,
+          phone: profile.phone,
+          isSuperAdmin: true,
+          salonCode: 'SUPER-ADMIN',
+        }
+        setSession(newSession)
+        setScreen('super-admin')
+        return true
+      }
 
       const [barbersRes, txnsRes] = await Promise.all([
         supabase.from('barbers').select('*').eq('admin_id', profile.id),
@@ -396,6 +485,9 @@ function App() {
           address: profile.shop_address || '',
           salonCode: savedSalonCode,
           adminId: profile.id,
+          subscriptionStatus: profile.subscription_status,
+          subscriptionEnd: profile.subscription_end,
+          isSuperAdmin: false,
         },
         admin: {
           id: profile.id,
@@ -404,16 +496,28 @@ function App() {
           firstName: profile.first_name || '',
           lastName: profile.last_name || '',
           salonCode: savedSalonCode,
+          isSuperAdmin: false,
+          isLocked: sub.isLocked,
+          lockStatus: sub.status,
         },
         barbers: remoteBarbers,
         transactions: remoteTxns,
       })
 
-      const newSession = { role: 'admin', adminId: profile.id, phone: profile.phone, salonCode: savedSalonCode }
+      const newSession = {
+        role: 'admin',
+        adminId: profile.id,
+        phone: profile.phone,
+        salonCode: savedSalonCode,
+        isSuperAdmin: false,
+        isLocked: sub.isLocked,
+        lockStatus: sub.status,
+      }
       setSession(newSession)
-      setScreen('dashboard')
+      setScreen(sub.isLocked ? 'lock-screen' : 'dashboard')
       return true
-    } catch {
+    } catch (err) {
+      console.error('[handleAdminLogin] ERROR:', err)
       setToast(ar ? 'رقم الهاتف غير مسجل.' : 'Numéro non enregistré.')
       return false
     }
@@ -439,16 +543,24 @@ function App() {
       const barber = mapBarberRow(found)
 
       let shop = { name: 'Barber DZ', phone: '', address: '', salonCode: DEFAULT_SALON_CODE, adminId: barber.adminId || '' }
+      let isLocked = false
+      let lockStatus = 'active'
+
       if (barber.adminId) {
         const { data: profiles } = await supabase.from('profiles').select('*').eq('id', barber.adminId)
         if (profiles && profiles.length > 0) {
           const p = profiles[0]
+          const sub = checkSubscriptionStatus(p)
+          isLocked = sub.isLocked
+          lockStatus = sub.status
           shop = {
             name: p.shop_name || 'Barber DZ',
             phone: p.phone || '',
             address: p.shop_address || '',
             salonCode: formatSalonCode(p.salon_code, DEFAULT_SALON_CODE),
             adminId: p.id,
+            subscriptionStatus: p.subscription_status,
+            subscriptionEnd: p.subscription_end,
           }
         }
       }
@@ -463,9 +575,15 @@ function App() {
         transactions: remoteTxns,
       })
 
-      const newSession = { role: 'barber', barberId: barber.id, adminId: barber.adminId }
+      const newSession = {
+        role: 'barber',
+        barberId: barber.id,
+        adminId: barber.adminId,
+        isLocked,
+        lockStatus,
+      }
       setSession(newSession)
-      setScreen('barber-workspace')
+      setScreen(isLocked ? 'lock-screen' : 'barber-workspace')
       return true
     } catch {
       setToast(ar ? 'بيانات الحلاق غير صحيحة.' : 'Identifiants barbier incorrects.')
@@ -510,7 +628,7 @@ function App() {
       })
 
       if (authError) {
-        throw authError
+        /* proceed with custom id fallback */
       }
 
       const userId = authData?.user?.id || crypto.randomUUID()
@@ -525,6 +643,9 @@ function App() {
         shop_address: safeShop.address,
         salon_code: generatedSalonCode,
         role: 'admin',
+        is_super_admin: false,
+        subscription_status: 'pending',
+        subscription_end: null,
         created_at: new Date().toISOString(),
       }
 
@@ -533,7 +654,7 @@ function App() {
         throw profileError
       }
 
-      setToast(ar ? 'تم إنشاء الحساب. سجّل الدخول.' : 'Compte administrateur créé. Connectez-vous.')
+      setToast(ar ? 'تم إنشاء الحساب بنجاح! حسابك في انتظار التفعيل من قِبل الإدارة.' : 'Compte créé ! En attente d’activation par l’administrateur.')
       setScreen('admin-login')
     } catch (error) {
       const message = error?.message || (ar ? 'Échec de création du compte.' : 'La création du compte a échoué.')
@@ -580,28 +701,54 @@ function App() {
   }
 
   let content
-  if (screen === 'role') content = <RoleScreen onChoose={(role) => setScreen(role === 'admin' ? 'admin-login' : 'barber-login')} shopName={data.shop?.name} />
+  if (screen === 'super-admin') {
+    content = <SuperAdminDashboard session={session} logout={logout} />
+  } else if (session?.isLocked || screen === 'lock-screen') {
+    content = (
+      <SubscriptionLockScreen
+        status={session?.lockStatus || data.admin?.lockStatus || 'pending'}
+        isBarber={session?.role === 'barber'}
+        shopName={data.shop?.name}
+        salonCode={data.shop?.salonCode}
+        phone={data.admin?.phone || session?.phone}
+        logout={logout}
+      />
+    )
+  } else if (screen === 'role') content = <RoleScreen onChoose={(role) => setScreen(role === 'admin' ? 'admin-login' : 'barber-login')} shopName={data.shop?.name} />
   else if (screen === 'admin-login') content = <AdminLogin data={data} onBack={() => setScreen('role')} onLogin={(phone, password) => handleAdminLogin(phone, password)} onRegister={() => setScreen('register')} />
   else if (screen === 'register') content = <Register onBack={() => setScreen('admin-login')} onRegister={handleRegister} />
   else if (screen === 'barber-login') content = <BarberLogin onBack={() => setScreen('role')} onLogin={(phone, code) => handleBarberLogin(phone, code)} shopName={data.shop?.name} />
-  else if (screen === 'dashboard') content = <Dashboard data={data} totals={totals} setScreen={setScreen} logout={logout} l={l} />
+  else if (screen === 'dashboard') {
+    content = (session?.isSuperAdmin || session?.role === 'super_admin')
+      ? <SuperAdminDashboard session={session} logout={logout} />
+      : <Dashboard data={data} totals={totals} setScreen={setScreen} logout={logout} l={l} />
+  }
   else if (screen === 'barbers') content = <BarberManagement barbers={data.barbers} salonCode={data.admin?.salonCode || data.shop?.salonCode || DEFAULT_SALON_CODE} onBack={() => setScreen('dashboard')} onAdd={addBarber} onUpdate={updateBarber} onDelete={deleteBarber} l={l} shopName={data.shop?.name} />
   else if (screen === 'summary') content = <Summary data={data} totals={totals} onBack={() => setScreen('dashboard')} l={l} shopName={data.shop?.name} />
-  else if (screen === 'settings') content = <Settings data={data} isAdmin={session?.role === 'admin'} barber={data.barbers.find((b) => b.id === session?.barberId)} onBack={() => setScreen(session?.role === 'admin' ? 'dashboard' : 'barber-workspace')} onSave={handleSaveSettings} logout={logout} l={l} ar={ar} />
+  else if (screen === 'settings') content = <Settings data={data} isAdmin={session?.role === 'admin' || session?.role === 'super_admin'} barber={data.barbers.find((b) => b.id === session?.barberId)} onBack={() => setScreen(session?.role === 'admin' || session?.role === 'super_admin' ? 'dashboard' : 'barber-workspace')} onSave={handleSaveSettings} logout={logout} l={l} ar={ar} />
   else content = <BarberWorkspace barber={data.barbers.find((b) => b.id === session?.barberId)} transactions={data.transactions} onSave={addTransaction} onSettings={() => setScreen('settings')} logout={logout} l={l} ar={ar} shopName={data.shop?.name} />
 
   return (
     <I18nContext.Provider value={{ locale, t: (key) => getMessages(locale)[key] || key }}>
       <div className={`app-layout ${session ? 'is-authenticated' : 'is-guest'}`} dir={ar ? 'rtl' : 'ltr'}>
-        {session && <Sidebar role={session.role} setScreen={setScreen} logout={logout} screen={screen} shopName={data.shop?.name} />}
+        {session && (
+          <Sidebar
+            role={session.role}
+            isSuperAdmin={Boolean(session.isSuperAdmin || session.role === 'super_admin')}
+            setScreen={setScreen}
+            logout={logout}
+            screen={screen}
+            shopName={data.shop?.name}
+          />
+        )}
         <main className="app">
           <Preferences locale={locale} theme={theme} onLocaleChange={setLocale} onThemeChange={setTheme} />
-          {session?.role === 'admin' && <AdminCashSale onSave={addTransaction} />}
+          {session?.role === 'admin' && !session?.isLocked && <AdminCashSale onSave={addTransaction} />}
           {screen === 'summary' && <TransactionCount count={data.transactions.length} />}
           {loading ? (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '60vh', gap: '16px', opacity: 0.6 }}>
               <span style={{ fontSize: '2rem' }}>✂</span>
-              <p>Chargement depuis Supabase…</p>
+              <p>Chargement…</p>
             </div>
           ) : content}
           {toast && <div className="toast">✓ {toast}</div>}

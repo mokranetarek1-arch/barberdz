@@ -14,3 +14,19 @@
 .transaction-count{display:flex;align-items:center;gap:10px;margin-top:8px;padding:11px 14px;border:1px solid #c9e6d8;border-radius:12px;color:var(--accent-dark);background:var(--accent-soft)}.transaction-count strong{font-size:20px}.transaction-count small{color:var(--muted);font-size:11px}
 [dir="rtl"] .topbar .icon-button{transform:scaleX(-1)}[dir="rtl"] .sidebar-nav button{text-align:right}
 :root[data-theme="dark"]{--bg:#101815;--card:#17231e;--ink:#edf7f2;--muted:#a7b8b0;--line:#2a3a33;--accent:#35bd8c;--accent-dark:#86e0bc;--accent-soft:#1b352a;--danger:#ff8288}:root[data-theme="dark"] body{background:radial-gradient(circle at 8% 0%,#193b2f 0,transparent 25rem),var(--bg)}:root[data-theme="dark"] .sidebar,:root[data-theme="dark"] .auth-card,:root[data-theme="dark"] .form-card,:root[data-theme="dark"] .info-card,:root[data-theme="dark"] .list-card,:root[data-theme="dark"] .profile,:root[data-theme="dark"] .summary-card,:root[data-theme="dark"] .metric,:root[data-theme="dark"] .action-card,:root[data-theme="dark"] .role-card{background:rgba(23,35,30,.94);border-color:#2c3e36;box-shadow:0 12px 35px rgba(0,0,0,.18)}:root[data-theme="dark"] .field input,:root[data-theme="dark"] .service-chips button{color:var(--ink);border-color:#344940;background:#132019}:root[data-theme="dark"] .tabs{background:#17271f}:root[data-theme="dark"] .tabs button.active,:root[data-theme="dark"] .icon-button,:root[data-theme="dark"] .preferences button{color:var(--ink);border-color:#344940;background:#1d2c25}:root[data-theme="dark"] .code-box,:root[data-theme="dark"] .commission-preview{background:#172b22}:root[data-theme="dark"] .sidebar-nav button{color:#bdcdc5}:root[data-theme="dark"] .sidebar-nav button:hover{color:#8ee7c2}:root[data-theme="dark"] .role-card:after{opacity:.22}
+
+/* Super Admin & Lock Screen Styles */
+.status-pill{font-weight:700;display:inline-flex;align-items:center;gap:5px}
+.badge-success{background:#e6f9f0;color:#0d8967;border:1px solid #b8e6d2}
+.badge-warning{background:#fef7e7;color:#b45309;border:1px solid #fde68a}
+.badge-danger{background:#fee2e2;color:#b91c1c;border:1px solid #fca5a5}
+.badge-pending{background:#f1f5f9;color:#475569;border:1px solid #cbd5e1}
+
+.card-stat{background:var(--bg-card,#fff);border:1px solid var(--border-color,#e2e8f0);border-radius:14px;padding:16px 18px;display:flex;flex-direction:column;gap:4px;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+.stat-label{font-size:0.82rem;color:var(--muted,#64748b);font-weight:600}
+.stat-value{font-size:1.6rem;color:var(--ink,#10211c);font-weight:800;letter-spacing:-0.02em}
+
+.filter-btn{border:1px solid var(--border-color,#e2e8f0);background:var(--bg-card,#fff);color:var(--muted,#64748b);padding:7px 14px;border-radius:10px;font-size:0.82rem;font-weight:700;cursor:pointer;transition:all .18s ease}
+.filter-btn:hover{color:var(--accent,#0b7a5b);border-color:#b9dece}
+.filter-btn.active{background:var(--accent,#0b7a5b);color:#fff;border-color:var(--accent,#0b7a5b);box-shadow:0 4px 10px rgba(11,122,91,.2)}
+
