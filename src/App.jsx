@@ -95,6 +95,7 @@ async function loadFromSupabase() {
         salonCode,
       },
       admin: {
+        id: profile?.id || '',
         phone: profile?.phone || '',
         password: profile?.password || '',
         firstName: profile?.first_name || '',
@@ -114,15 +115,16 @@ async function syncToSupabase(data) {
 
   try {
     if (data.shop || data.admin) {
+      const profileId = data.admin?.id || data.shop?.adminId || crypto.randomUUID()
       const profilePayload = {
-        id: crypto.randomUUID(),
+        id: profileId,
         first_name: data.admin?.firstName || '',
         last_name: data.admin?.lastName || '',
         phone: data.admin?.phone || data.shop?.phone || '',
         password: data.admin?.password || '',
         shop_name: data.shop?.name || '',
         shop_address: data.shop?.address || '',
-        salon_code: ensureSalonCode(data.shop?.salonCode || data.admin?.salonCode, data.admin?.phone || data.shop?.name || 'admin'),
+        salon_code: ensureSalonCode(data.shop?.salonCode || data.admin?.salonCode, profileId || data.admin?.phone || data.shop?.name || 'admin'),
         role: 'admin',
         created_at: new Date().toISOString(),
       }
@@ -196,8 +198,8 @@ function App() {
       }
 
       const savedSalonCode = ensureSalonCode(profile?.salon_code || data?.shop?.salonCode || data?.admin?.salonCode || DEFAULT_SALON_CODE, profile?.id || profile?.phone || 'admin')
-      setData((current) => ({ ...current, admin: { phone: profile.phone, password: profile.password, firstName: profile.first_name || '', lastName: profile.last_name || '', salonCode: savedSalonCode }, shop: { name: profile.shop_name || current.shop.name, phone: profile.phone || current.shop.phone, address: profile.shop_address || current.shop.address, salonCode: savedSalonCode } }))
-      setSession({ role: 'admin', salonCode: savedSalonCode })
+      setData((current) => ({ ...current, admin: { id: profile.id || current.admin?.id || '', phone: profile.phone, password: profile.password, firstName: profile.first_name || '', lastName: profile.last_name || '', salonCode: savedSalonCode }, shop: { name: profile.shop_name || current.shop.name, phone: profile.phone || current.shop.phone, address: profile.shop_address || current.shop.address, salonCode: savedSalonCode, adminId: profile.id || current.shop?.adminId || '' } }))
+      setSession({ role: 'admin', adminId: profile.id || current.admin?.id || '', salonCode: savedSalonCode })
       setScreen('dashboard')
     } catch {
       setToast(ar ? 'رقم الهاتف غير مسجل.' : 'Numéro non enregistré.')
@@ -253,7 +255,7 @@ function App() {
         throw profileError
       }
 
-      setData((current) => ({ ...current, admin: { ...safeAdmin, salonCode: generatedSalonCode }, shop: { ...safeShop, salonCode: generatedSalonCode } }))
+      setData((current) => ({ ...current, admin: { ...safeAdmin, id: userId, salonCode: generatedSalonCode }, shop: { ...safeShop, adminId: userId, salonCode: generatedSalonCode } }))
       setToast(ar ? 'تم إنشاء الحساب. سجّل الدخول.' : 'Compte administrateur créé. Connectez-vous.')
       setScreen('admin-login')
     } catch (error) {
