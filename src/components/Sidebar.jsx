@@ -1,6 +1,6 @@
 import { useI18n } from '../i18n'
 
-export default function Sidebar({ setScreen, logout, role, screen, shopName, isSuperAdmin }) {
+export default function Sidebar({ setScreen, logout, role, screen, shopName, isSuperAdmin, superAdminView, onSuperAdminView }) {
   const isAdmin = role === 'admin' || role === 'super_admin'
   const { t } = useI18n()
 
@@ -15,30 +15,17 @@ export default function Sidebar({ setScreen, logout, role, screen, shopName, isS
           </div>
         </div>
         <nav className="sidebar-nav">
-          <button
-            className={screen === 'super-admin' ? 'active' : ''}
-            onClick={() => setScreen('super-admin')}
-            style={{ fontWeight: '800' }}
-          >
-            👑 {t('superAdmin') || 'Gestion des Salons'}
+          <button className={screen === 'super-admin' && superAdminView === 'overview' ? 'active' : ''} onClick={() => { setScreen('super-admin'); onSuperAdminView?.('overview') }} style={{ fontWeight: '800' }}>
+            {t('superGlobal') || 'Gestion globale'}
           </button>
-          <button
-            className={screen === 'dashboard' ? 'active' : ''}
-            onClick={() => setScreen('dashboard')}
-          >
-            ✂️ {t('dashboard') || 'Mon Salon'}
+          <button className={superAdminView === 'requests' ? 'active' : ''} onClick={() => { setScreen('super-admin'); onSuperAdminView?.('requests') }}>
+            {t('subscriptionRequests') || 'Demandes d’abonnement'}
           </button>
-          <button
-            className={screen === 'barbers' ? 'active' : ''}
-            onClick={() => setScreen('barbers')}
-          >
-            ♙ {t('barbers') || 'Mes Barbiers'}
+          <button className={superAdminView === 'salons' ? 'active' : ''} onClick={() => { setScreen('super-admin'); onSuperAdminView?.('salons') }}>
+            {t('salons') || 'Salons'}
           </button>
-          <button
-            className={screen === 'settings' ? 'active' : ''}
-            onClick={() => setScreen('settings')}
-          >
-            ⚙ {t('settings') || 'Paramètres'}
+          <button className={superAdminView === 'settings' ? 'active' : ''} onClick={() => { setScreen('super-admin'); onSuperAdminView?.('settings') }}>
+            {t('contactSettings') || 'Paramètres de contact'}
           </button>
         </nav>
         <div className="sidebar-footer">
@@ -73,6 +60,9 @@ export default function Sidebar({ setScreen, logout, role, screen, shopName, isS
             </button>
             <button className={screen === 'summary' ? 'active' : ''} onClick={() => setScreen('summary')}>
               ◫ {t('summary')}
+            </button>
+            <button className={screen === 'subscription' ? 'active' : ''} onClick={() => setScreen('subscription')}>
+              ◷ {t('subscription') || 'Abonnement'}
             </button>
           </>
         )}

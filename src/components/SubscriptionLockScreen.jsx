@@ -1,5 +1,14 @@
-﻿import Topbar from './Topbar'
+﻿import { useState } from 'react'
+import Topbar from './Topbar'
 import { useI18n } from '../i18n'
+import { SUBSCRIPTION_PLANS, formatSubscriptionAmount } from '../subscription'
+
+const normalizeWhatsAppNumber = (value = '') => {
+  const digits = String(value).replace(/\D/g, '')
+  if (digits.startsWith('0')) return `213${digits.slice(1)}`
+  if (digits.startsWith('213')) return digits
+  return digits
+}
 
 export default function SubscriptionLockScreen({
   status = 'pending', // 'pending' | 'expired' | 'blocked'
@@ -7,12 +16,19 @@ export default function SubscriptionLockScreen({
   shopName = 'Barber DZ',
   salonCode = '',
   phone = '',
+  ownerName = '',
+  address = '',
   logout,
-  supportPhone = '0770000000',
-  supportWhatsapp = '213770000000',
+  contact = {},
+  onCreateOrder,
 }) {
   const { t, locale } = useI18n()
   const ar = locale === 'ar'
+  const [selectedPlan, setSelectedPlan] = useState(null)
+  const [paymentMethod, setPaymentMethod] = useState('cash')
+  const [submittedOrder, setSubmittedOrder] = useState(null)
+  const supportPhone = contact.phone || ''
+  const supportWhatsapp = normalizeWhatsAppNumber(contact.whatsapp)
 
   let title = ''
   let message = ''
@@ -55,10 +71,23 @@ export default function SubscriptionLockScreen({
       : `La période d'abonnement pour le salon "${shopName}" est arrivée à son terme. Renouvelez dès maintenant pour continuer à gérer vos coiffeurs et vos revenus.`
   }
 
-  const whatsappMsg = encodeURIComponent(
-    `Bonjour Barber DZ, je souhaite activer/renouveler l'abonnement de mon salon:\n- Nom: ${shopName}\n- Code: ${salonCode}\n- Téléphone: ${phone}`
-  )
-  const whatsappUrl = `https://wa.me/${supportWhatsapp}?text=${whatsappMsg}`
+  const submitOrder = async (event) => {
+    event.preventDefault()
+    if (!selectedPlan || !onCreateOrder) return
+    const whatsappWindow = paymentMethod === 'ccp' && supportWhatsapp ? window.open('', '_blank') : null
+    const created = await onCreateOrder({ planId: selectedPlan.id, paymentMethod })
+    if (created) {
+      setSubmittedOrder(created)
+      setSelectedPlan(null)
+      if (whatsappWindow) {
+        whatsappWindow.location.href = buildWhatsappUrl(created, supportWhatsapp, shopName, salonCode, phone, ownerName, address)
+      }
+    } else if (whatsappWindow) {
+      whatsappWindow.close()
+    }
+  }
+
+  const buildWhatsappUrl = (order, whatsappNumber, salon, code, ownerPhone, owner, salonAddress) => `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(`Bonjour,\n\nJe souhaite confirmer mon abonnement.\n\nSalon : ${salon}\nPropriétaire : ${owner || 'Non renseigné'}\nAdresse : ${salonAddress || 'Non renseignée'}\nCode salon : ${code}\nTéléphone : ${ownerPhone}\nDemande : #${order.id || 'à confirmer'}\nPlan : ${order.label}\nMontant : ${formatSubscriptionAmount(order.amount)}\nMode de paiement : CCP\n\nJe joins ma preuve de paiement.`)}`
 
   return (
     <section className="auth-page lock-page" dir={ar ? 'rtl' : 'ltr'}>
@@ -80,28 +109,12 @@ export default function SubscriptionLockScreen({
           </div>
         )}
 
-        {!isBarber && (
+        {!isBarber && (status === 'expired' || status === 'pending') && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '20px' }}>
-            <a
-              href={whatsappUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '8px',
-                background: '#25D366',
-                color: '#fff',
-                textDecoration: 'none',
-                padding: '12px 20px',
-                borderRadius: '10px',
-                fontWeight: '600',
-                fontSize: '1rem',
-              }}
-            >
-              <span>💬</span> {ar ? 'تواصل معنا عبر واتساب للتفعيل' : 'Activer via WhatsApp'}
-            </a>
+            <div className="subscription-plans">
+              {SUBSCRIPTION_PLANS.map((plan) => <button type="button" className="subscription-plan" key={plan.id} onClick={() => setSelectedPlan(plan)}><strong>{ar ? `${plan.months} شهر` : plan.label}</strong><b>{formatSubscriptionAmount(plan.amount)}</b><span>{ar ? 'اشترك' : 'S’abonner'}</span></button>)}
+            </div>
+            {submittedOrder && <SubscriptionConfirmation order={submittedOrder} ar={ar} ccp={contact.ccp} supportWhatsapp={supportWhatsapp} shopName={shopName} salonCode={salonCode} phone={phone} ownerName={ownerName} address={address} buildWhatsappUrl={buildWhatsappUrl} />}
             {supportPhone && (
               <a
                 href={`tel:${supportPhone}`}
@@ -119,11 +132,13 @@ export default function SubscriptionLockScreen({
                   border: '1px solid #cbd5e1',
                 }}
               >
-                <span>📞</span> {ar ? `اتصل بالدعم: ${supportPhone}` : `Appeler le support: ${supportPhone}`}
+                {ar ? `اتصل بالدعم: ${supportPhone}` : `Appeler le support: ${supportPhone}`}
               </a>
             )}
           </div>
         )}
+
+        {selectedPlan && <div className="subscription-modal-backdrop"><form className="subscription-modal" onSubmit={submitOrder}><h3>{ar ? 'اختر طريقة الدفع' : 'Choisissez votre mode de paiement'}</h3><p><strong>{selectedPlan.label}</strong> · {formatSubscriptionAmount(selectedPlan.amount)}</p><div className="payment-options"><button type="button" className={paymentMethod === 'cash' ? 'active' : ''} onClick={() => setPaymentMethod('cash')}>{ar ? 'الدفع نقداً' : 'Paiement en espèces'}</button><button type="button" className={paymentMethod === 'ccp' ? 'active' : ''} onClick={() => setPaymentMethod('ccp')}>CCP</button></div>{paymentMethod === 'ccp' && <p>{ar ? `حوّل إلى حساب CCP: ${contact.ccp || 'غير مضبوط'}` : `Effectuez le virement vers le compte CCP : ${contact.ccp || 'non configuré'}`}</p>}<div className="form-actions"><button type="button" className="button secondary" onClick={() => setSelectedPlan(null)}>{ar ? 'إلغاء' : 'Annuler'}</button><button type="submit" className="button">{ar ? 'تأكيد الطلب' : 'Confirmer la demande'}</button></div></form></div>}
 
         <button type="button" className="text-button" onClick={logout} style={{ marginTop: '10px' }}>
           ← {ar ? 'تسجيل الخروج والعودة' : 'Se déconnecter et revenir à l’accueil'}
@@ -131,4 +146,18 @@ export default function SubscriptionLockScreen({
       </div>
     </section>
   )
+}
+
+function SubscriptionConfirmation({ order, ar, ccp, supportWhatsapp, shopName, salonCode, phone, ownerName, address, buildWhatsappUrl }) {
+  return <div className="subscription-confirmation">
+    <p className="success">{ar ? 'تم إرسال طلب الاشتراك بنجاح.' : 'Demande envoyée avec succès. Notre équipe va vous contacter.'}</p>
+    <p><strong>{ar ? 'رقم الطلب' : 'Demande'} :</strong> #{order.id || 'en attente'}</p>
+    <p><strong>{ar ? 'الخطة' : 'Plan'} :</strong> {order.label}</p>
+    <p><strong>{ar ? 'المبلغ' : 'Montant'} :</strong> {formatSubscriptionAmount(order.amount)}</p>
+    <p><strong>{ar ? 'طريقة الدفع' : 'Paiement'} :</strong> {order.paymentMethod === 'ccp' ? 'CCP' : 'Cash'}</p>
+    {order.paymentMethod === 'ccp' && <>
+      <p><strong>CCP :</strong> {ccp || (ar ? 'غير مضبوط' : 'Non configuré')}</p>
+      {supportWhatsapp ? <a className="whatsapp-proof-button" href={buildWhatsappUrl(order, supportWhatsapp, shopName, salonCode, phone, ownerName, address)} target="_blank" rel="noopener noreferrer">{ar ? 'إرسال إثبات الدفع عبر واتساب' : 'Envoyer le reçu via WhatsApp'}</a> : <p className="error">{ar ? 'رقم واتساب غير مضبوط من الإدارة.' : 'Le numéro WhatsApp du Super Admin n’est pas configuré.'}</p>}
+    </>}
+  </div>
 }

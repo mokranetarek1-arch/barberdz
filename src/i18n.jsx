@@ -2,7 +2,7 @@ import { createContext, useContext } from 'react'
 
 const messages = {
   fr: {
-    dashboard: 'Tableau de bord', workspace: 'Mon espace', barbers: 'Barbiers', summary: 'Résumé', settings: 'Paramètres', logout: 'Se déconnecter', superAdmin: 'Gestion des Salons',
+    dashboard: 'Tableau de bord', workspace: 'Mon espace', barbers: 'Barbiers', summary: 'Résumé', subscription: 'Abonnement', settings: 'Paramètres', logout: 'Se déconnecter', superAdmin: 'Gestion des Salons', superGlobal: 'Gestion globale', subscriptionRequests: 'Demandes d’abonnement', salons: 'Salons', contactSettings: 'Paramètres de contact',
     access: 'GESTION DE SALON', welcome: 'Bienvenue dans votre espace', chooseAccess: 'Choisissez votre type d’accès pour continuer.', admin: 'Administrateur', barber: 'Barbier', adminDescription: 'Gérez le salon, l’équipe et les revenus', barberDescription: 'Enregistrez vos prestations et consultez vos gains', accessButton: 'Accéder ←', install: 'Installez Barber DZ depuis le menu de votre navigateur pour y accéder comme une application.',
     adminLogin: 'Connexion administrateur', welcomeBack: 'Content de vous revoir', loginDescription: 'Connectez-vous pour gérer votre salon.', phone: 'Numéro de téléphone', password: 'Mot de passe', login: 'Se connecter', createAccount: 'Créer un compte administrateur', invalidAdmin: 'Numéro ou mot de passe incorrect.',
     barberLogin: 'Espace barbier', hello: 'Bonjour !', barberLoginDescription: 'Saisissez les identifiants fournis par votre responsable.', barberCode: 'Code barbier', enterWorkspace: 'Entrer dans mon espace', invalidBarber: 'Téléphone ou code barbier incorrect.',
@@ -10,7 +10,7 @@ const messages = {
     adminProfile: 'Informations personnelles', shopInfo: 'Informations du salon', salonCode: 'Code du salon', copy: 'Copier', copied: 'Copié', save: 'Enregistrer', about: 'À propos', aboutText: 'Application de gestion de salon, des commissions et des revenus quotidiens.',
   },
   ar: {
-    dashboard: 'لوحة التحكم', workspace: 'مساحتي', barbers: 'الحلاقون', summary: 'الملخص', settings: 'الإعدادات', logout: 'تسجيل الخروج', superAdmin: 'إدارة الصالونات',
+    dashboard: 'لوحة التحكم', workspace: 'مساحتي', barbers: 'الحلاقون', summary: 'الملخص', subscription: 'الاشتراك', settings: 'الإعدادات', logout: 'تسجيل الخروج', superAdmin: 'إدارة الصالونات', superGlobal: 'الإدارة العامة', subscriptionRequests: 'طلبات الاشتراك', salons: 'الصالونات', contactSettings: 'إعدادات الاتصال',
     access: 'إدارة الصالون', welcome: 'مرحباً بك في مساحتك', chooseAccess: 'اختر نوع الدخول للمتابعة.', admin: 'المدير', barber: 'الحلاق', adminDescription: 'أدر الصالون والفريق والإيرادات', barberDescription: 'سجّل خدماتك وتابع أرباحك', accessButton: 'دخول ←', install: 'ثبّت Barber DZ من قائمة المتصفح للوصول إليه كتطبيق.',
     adminLogin: 'دخول المدير', welcomeBack: 'سعداء بعودتك', loginDescription: 'سجّل الدخول لإدارة صالونك.', phone: 'رقم الهاتف', password: 'كلمة المرور', login: 'تسجيل الدخول', createAccount: 'إنشاء حساب مدير', invalidAdmin: 'رقم الهاتف أو كلمة المرور غير صحيح.',
     barberLogin: 'مساحة الحلاق', hello: 'مرحباً!', barberLoginDescription: 'أدخل البيانات التي زودك بها مسؤول الصالون.', barberCode: 'رمز الحلاق', enterWorkspace: 'الدخول إلى مساحتي', invalidBarber: 'رقم الهاتف أو رمز الحلاق غير صحيح.',

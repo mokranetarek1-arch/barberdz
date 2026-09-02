@@ -2,8 +2,9 @@ import { useState, useEffect, useMemo } from 'react'
 import Topbar from '../components/Topbar'
 import supabase from '../supabaseClient'
 import { useI18n } from '../i18n'
+import { SUBSCRIPTION_PLANS, addMonths, formatSubscriptionAmount } from '../subscription'
 
-export default function SuperAdminDashboard({ session, logout, onEnterSalon }) {
+export default function SuperAdminDashboard({ session, logout, onEnterSalon, activeView = 'overview', onViewChange }) {
   const { t, locale } = useI18n()
   const ar = locale === 'ar'
 
@@ -16,6 +17,20 @@ export default function SuperAdminDashboard({ session, logout, onEnterSalon }) {
   const [customDaysModal, setCustomDaysModal] = useState(null) // { salonId, shopName }
   const [customDaysInput, setCustomDaysInput] = useState('30')
   const [actionToast, setActionToast] = useState('')
+  const [subscriptionOrders, setSubscriptionOrders] = useState([])
+  const [subscriptions, setSubscriptions] = useState([])
+  const [contact, setContact] = useState({ whatsapp: '', phone: '', ccp: '', countdown: true, expiryNotifications: true })
+  const [now, setNow] = useState(Date.now())
+  const [orderFilter, setOrderFilter] = useState('all')
+  const [orderDateFrom, setOrderDateFrom] = useState('')
+  const [orderDateTo, setOrderDateTo] = useState('')
+  const [salonDateFrom, setSalonDateFrom] = useState('')
+  const [salonDateTo, setSalonDateTo] = useState('')
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [])
 
   const showToast = (msg) => {
     setActionToast(msg)
@@ -25,10 +40,13 @@ export default function SuperAdminDashboard({ session, logout, onEnterSalon }) {
   const loadData = async () => {
     setLoading(true)
     try {
-      const [profilesRes, barbersRes, txnsRes] = await Promise.all([
+      const [profilesRes, barbersRes, txnsRes, ordersRes, subscriptionsRes, contactRes] = await Promise.all([
         supabase.from('profiles').select('*').order('created_at', { ascending: false }),
         supabase.from('barbers').select('*'),
         supabase.from('transactions').select('*'),
+        supabase.from('subscription_orders').select('*').order('created_at', { ascending: false }),
+        supabase.from('subscriptions').select('*').order('created_at', { ascending: false }),
+        supabase.from('platform_settings').select('value').eq('key', 'contact').maybeSingle(),
       ])
 
       const list = Array.isArray(profilesRes.data)
@@ -37,6 +55,9 @@ export default function SuperAdminDashboard({ session, logout, onEnterSalon }) {
       setSalons(list)
       setAllBarbers(Array.isArray(barbersRes.data) ? barbersRes.data : [])
       setAllTransactions(Array.isArray(txnsRes.data) ? txnsRes.data : [])
+      setSubscriptionOrders(Array.isArray(ordersRes.data) ? ordersRes.data : [])
+      setSubscriptions(Array.isArray(subscriptionsRes.data) ? subscriptionsRes.data : [])
+      setContact((current) => ({ ...current, ...(contactRes.data?.value || {}) }))
     } catch (err) {
       console.error('[SuperAdmin] Failed to load data:', err)
     } finally {
@@ -60,7 +81,6 @@ export default function SuperAdminDashboard({ session, logout, onEnterSalon }) {
     }
 
     const end = new Date(salon.subscription_end).getTime()
-    const now = Date.now()
     const diffMs = end - now
 
     if (diffMs <= 0) {
@@ -99,6 +119,17 @@ export default function SuperAdminDashboard({ session, logout, onEnterSalon }) {
     }
   }
 
+  const countdown = (endDate) => {
+    const remaining = new Date(endDate).getTime() - now
+    if (!Number.isFinite(remaining) || remaining <= 0) return ar ? 'منتهي' : 'Expiré'
+    const totalSeconds = Math.floor(remaining / 1000)
+    const days = Math.floor(totalSeconds / 86400)
+    const hours = String(Math.floor((totalSeconds % 86400) / 3600)).padStart(2, '0')
+    const minutes = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, '0')
+    const seconds = String(totalSeconds % 60).padStart(2, '0')
+    return `${days}j ${hours}:${minutes}:${seconds}`
+  }
+
   // Extend or activate subscription (supports minutes, hours, days)
   const setSubscription = async (salonId, amount, unit = 'days', forceFromNow = true) => {
     try {
@@ -132,6 +163,16 @@ export default function SuperAdminDashboard({ session, logout, onEnterSalon }) {
         .eq('id', salonId)
 
       if (error) throw error
+      const { error: subscriptionError } = await supabase.from('subscriptions').insert({
+        salon_id: salonId,
+        plan: unit === 'days' && amount >= 365 ? 'year' : unit === 'days' && amount >= 30 ? 'month' : 'custom',
+        status: 'active',
+        start_date: new Date(baseTime).toISOString(),
+        end_date: newEnd,
+        activated_at: new Date().toISOString(),
+        activated_by: session?.adminId || null,
+      })
+      if (subscriptionError && subscriptionError.code !== '23505') throw subscriptionError
 
       showToast(ar ? `تم تفعيل +${amount} ${unitLabel} بنجاح.` : `+${amount} ${unitLabel} activé(e)s avec succès.`)
       setCustomDaysModal(null)
@@ -164,6 +205,61 @@ export default function SuperAdminDashboard({ session, logout, onEnterSalon }) {
     } catch (err) {
       console.error('[SuperAdmin] toggleBlock error:', err)
     }
+  }
+
+  const updateOrder = async (order, status) => {
+    try {
+      const validatedAt = new Date().toISOString()
+      if (status === 'confirmed') {
+        const plan = SUBSCRIPTION_PLANS.find((item) => item.id === order.plan)
+        if (!plan) throw new Error('Unknown subscription plan')
+        const startDate = new Date()
+        const endDate = addMonths(startDate, plan.months)
+        const { data: existingSubscription, error: lookupError } = await supabase.from('subscriptions').select('id').eq('order_id', order.id).maybeSingle()
+        if (lookupError) throw lookupError
+        const { error: subscriptionError } = existingSubscription
+          ? await supabase.from('subscriptions').update({ plan: plan.id, status: 'active', start_date: startDate.toISOString(), end_date: endDate.toISOString(), activated_at: validatedAt, activated_by: session?.adminId || null }).eq('id', existingSubscription.id)
+          : await supabase.from('subscriptions').insert({ salon_id: order.salon_id, order_id: order.id, plan: plan.id, status: 'active', start_date: startDate.toISOString(), end_date: endDate.toISOString(), activated_at: validatedAt, activated_by: session?.adminId || null })
+        if (subscriptionError) throw subscriptionError
+        const { error: profileError } = await supabase.from('profiles').update({ subscription_status: 'active', subscription_end: endDate.toISOString() }).eq('id', order.salon_id)
+        if (profileError) throw profileError
+      }
+      const { error } = await supabase.from('subscription_orders').update({ status, validated_at: validatedAt, validated_by: session?.adminId || null }).eq('id', order.id)
+      if (error) throw error
+      showToast(ar ? 'تم تحديث طلب الاشتراك.' : 'Demande d’abonnement mise à jour.')
+      loadData()
+    } catch (err) {
+      console.error('[SuperAdmin] subscription order error:', err)
+      const details = err.code === '42P01'
+        ? (ar ? 'جدول الاشتراكات غير موجود. نفذ ملف SQL.' : 'La table des abonnements est absente. Exécutez le fichier SQL.')
+        : err.code === '42501'
+          ? (ar ? 'ليس لديك صلاحية التأكيد. أعد تنفيذ سياسات RLS.' : 'Permission refusée. Réexécutez les politiques RLS des abonnements.')
+          : err.code === '23503'
+            ? (ar ? 'المدير أو الصالون غير موجود في profiles.' : 'Le Super Admin ou le salon n’existe pas dans profiles.')
+          : err.message
+      showToast(details || (ar ? 'تعذر تحديث الطلب.' : 'Impossible de mettre à jour la demande.'))
+    }
+  }
+
+  const saveContact = async (event) => {
+    event.preventDefault()
+    const { data: savedContact, error } = await supabase.from('platform_settings').upsert([{
+      key: 'contact',
+      value: contact,
+      updated_at: new Date().toISOString(),
+    }], { onConflict: 'key' }).select('value').single()
+    if (error) {
+      console.error('[SuperAdmin] save contact error:', error)
+      const details = error.code === '42P01'
+        ? (ar ? 'جدول إعدادات الاتصال غير موجود. نفذ ملف SQL.' : 'La table des paramètres est absente. Exécutez le fichier SQL.')
+        : error.code === '42501'
+          ? (ar ? 'ليس لديك صلاحية الحفظ. أعد تنفيذ سياسات RLS.' : 'Permission refusée. Réexécutez les politiques RLS.')
+          : error.message
+      showToast(details || (ar ? 'تعذر حفظ الإعدادات.' : 'Impossible d’enregistrer les paramètres.'))
+      return
+    }
+    setContact((current) => ({ ...current, ...(savedContact?.value || {}) }))
+    showToast(ar ? 'تم حفظ إعدادات الاتصال.' : 'Paramètres de contact enregistrés.')
   }
 
   // Delete salon and its data
@@ -220,6 +316,8 @@ export default function SuperAdminDashboard({ session, logout, onEnterSalon }) {
     return salons.filter((s) => {
       const st = getSalonStatus(s)
       if (filter !== 'all' && st.key !== filter) return false
+      if (salonDateFrom && new Date(s.created_at).getTime() < new Date(`${salonDateFrom}T00:00:00`).getTime()) return false
+      if (salonDateTo && new Date(s.created_at).getTime() > new Date(`${salonDateTo}T23:59:59.999`).getTime()) return false
 
       if (search.trim()) {
         const q = search.toLowerCase().trim()
@@ -232,7 +330,14 @@ export default function SuperAdminDashboard({ session, logout, onEnterSalon }) {
       }
       return true
     })
-  }, [salons, filter, search])
+  }, [salons, filter, search, salonDateFrom, salonDateTo, now])
+
+  const filteredOrders = useMemo(() => subscriptionOrders.filter((order) => {
+    if (orderFilter !== 'all' && order.status !== orderFilter) return false
+    if (orderDateFrom && new Date(order.created_at).getTime() < new Date(`${orderDateFrom}T00:00:00`).getTime()) return false
+    if (orderDateTo && new Date(order.created_at).getTime() > new Date(`${orderDateTo}T23:59:59.999`).getTime()) return false
+    return true
+  }), [subscriptionOrders, orderFilter, orderDateFrom, orderDateTo])
 
   return (
     <div className="superadmin-wrapper" dir={ar ? 'rtl' : 'ltr'}>
@@ -251,8 +356,12 @@ export default function SuperAdminDashboard({ session, logout, onEnterSalon }) {
       />
 
       <div className="superadmin-content" style={{ padding: '24px', maxWidth: '1300px', margin: '0 auto' }}>
+        <nav className="superadmin-tabs" aria-label={ar ? 'أقسام الإدارة' : 'Sections administrateur'}>
+          {[['overview', ar ? 'نظرة عامة' : 'Vue d’ensemble'], ['requests', ar ? 'الطلبات' : 'Demandes'], ['salons', ar ? 'الصالونات' : 'Salons'], ['settings', ar ? 'الإعدادات' : 'Paramètres']].map(([view, label]) => <button type="button" className={activeView === view ? 'active' : ''} key={view} onClick={() => onViewChange?.(view)}>{label}</button>)}
+        </nav>
+
         {/* Global Platform KPIs */}
-        <div style={{ marginBottom: '28px' }}>
+        {activeView === 'overview' && <div style={{ marginBottom: '28px' }}>
           <h2 style={{ fontSize: '1.3rem', marginBottom: '16px', color: 'var(--text-main)' }}>
             {ar ? '📊 إحصائيات المنصة الشاملة' : '📊 Statistiques Globales de la Plateforme'}
           </h2>
@@ -299,10 +408,10 @@ export default function SuperAdminDashboard({ session, logout, onEnterSalon }) {
               <small style={{ color: '#64748b' }}>{stats.totalRevenue.toLocaleString()} DZD {ar ? 'حجم الأعمال' : 'volume'}</small>
             </div>
           </div>
-        </div>
+        </div>}
 
         {/* Filter and Search Bar */}
-        <div
+        {(activeView === 'overview' || activeView === 'salons') && <div
           style={{
             display: 'flex',
             flexWrap: 'wrap',
@@ -372,10 +481,33 @@ export default function SuperAdminDashboard({ session, logout, onEnterSalon }) {
               }}
             />
           </div>
-        </div>
+          {activeView === 'salons' && <div className="superadmin-date-filters"><label>{ar ? 'من' : 'Du'}<input type="date" value={salonDateFrom} onChange={(event) => setSalonDateFrom(event.target.value)} /></label><label>{ar ? 'إلى' : 'Au'}<input type="date" value={salonDateTo} onChange={(event) => setSalonDateTo(event.target.value)} /></label></div>}
+        </div>}
+
+        {activeView === 'settings' && <form className="platform-contact-panel" onSubmit={saveContact}>
+          <h2>{ar ? 'إعدادات الاتصال' : 'Paramètres de contact'}</h2>
+          <div className="platform-contact-grid">
+            <label>{ar ? 'واتساب' : 'WhatsApp'}<input value={contact.whatsapp} onChange={(event) => setContact({ ...contact, whatsapp: event.target.value })} placeholder="213..." /></label>
+            <label>{ar ? 'الهاتف' : 'Téléphone'}<input value={contact.phone} onChange={(event) => setContact({ ...contact, phone: event.target.value })} /></label>
+            <label>CCP<input value={contact.ccp} onChange={(event) => setContact({ ...contact, ccp: event.target.value })} /></label>
+          </div>
+          <label className="platform-checkbox"><input type="checkbox" checked={contact.countdown} onChange={(event) => setContact({ ...contact, countdown: event.target.checked })} /> {ar ? 'عرض العد التنازلي' : 'Afficher le compte à rebours'}</label>
+          <label className="platform-checkbox"><input type="checkbox" checked={contact.expiryNotifications} onChange={(event) => setContact({ ...contact, expiryNotifications: event.target.checked })} /> {ar ? 'تفعيل تنبيهات الانتهاء' : 'Activer les alertes d’expiration'}</label>
+          <button type="submit" className="button contact-save-button">{ar ? 'حفظ' : 'Enregistrer'}</button>
+        </form>}
+
+        {activeView === 'requests' && <section className="subscription-orders-panel">
+          <h2>{ar ? 'طلبات الاشتراك' : 'Demandes d’abonnement'}</h2>
+          <div className="superadmin-filter-row"><select value={orderFilter} onChange={(event) => setOrderFilter(event.target.value)}><option value="all">{ar ? 'كل الحالات' : 'Tous les statuts'}</option><option value="pending">pending</option><option value="verification">verification</option><option value="confirmed">confirmed</option><option value="rejected">rejected</option><option value="cancelled">cancelled</option></select><input type="date" value={orderDateFrom} onChange={(event) => setOrderDateFrom(event.target.value)} /><input type="date" value={orderDateTo} onChange={(event) => setOrderDateTo(event.target.value)} /></div>
+          {filteredOrders.length === 0 ? <p>{ar ? 'لا توجد طلبات.' : 'Aucune demande.'}</p> : filteredOrders.map((order) => {
+            const salon = salons.find((item) => item.id === order.salon_id)
+            const plan = SUBSCRIPTION_PLANS.find((item) => item.id === order.plan)
+            return <article className="subscription-order-row" key={order.id}><div><strong>{salon?.shop_name || order.salon_id}</strong><small>{plan?.label || order.duration} · {formatSubscriptionAmount(order.amount)} · {order.payment_method === 'ccp' ? 'CCP' : 'Cash'}</small><small>{new Date(order.created_at).toLocaleString(ar ? 'ar-DZ' : 'fr-DZ')}</small></div><span className={`status-pill ${order.status === 'confirmed' ? 'badge-success' : order.status === 'rejected' ? 'badge-danger' : 'badge-warning'}`}>{order.status}</span>{order.status === 'pending' || order.status === 'verification' ? <div className="subscription-order-actions"><button type="button" onClick={() => updateOrder(order, 'confirmed')}>{ar ? 'تأكيد الدفع' : 'Confirmer le paiement'}</button><button type="button" onClick={() => updateOrder(order, 'rejected')}>{ar ? 'رفض' : 'Rejeter'}</button></div> : null}</article>
+          })}
+        </section>}
 
         {/* Salons List */}
-        {loading ? (
+        {activeView === 'salons' && (loading ? (
           <div style={{ textAlign: 'center', padding: '60px', color: '#64748b' }}>
             <span style={{ fontSize: '2rem' }}>🔄</span>
             <p>{ar ? 'جاري تحميل الصالونات...' : 'Chargement des salons...'}</p>
@@ -390,6 +522,7 @@ export default function SuperAdminDashboard({ session, logout, onEnterSalon }) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
             {filteredSalons.map((salon) => {
               const statusInfo = getSalonStatus(salon)
+              const subscription = subscriptions.find((item) => item.salon_id === salon.id && item.status === 'active') || subscriptions.find((item) => item.salon_id === salon.id)
               const salonBarbers = allBarbers.filter((b) => b.admin_id === salon.id)
               const salonTxns = allTransactions.filter((t) => t.admin_id === salon.id)
               const salonRevenue = salonTxns.reduce((s, t) => s + (Number(t.amount) || 0), 0)
@@ -437,6 +570,7 @@ export default function SuperAdminDashboard({ session, logout, onEnterSalon }) {
                       <span>📑 <strong>{salonTxns.length}</strong> {ar ? 'معاملات' : 'prestations'}</span>
                       <span>💰 <strong>{salonRevenue.toLocaleString()} DZD</strong></span>
                     </div>
+                    <div className="subscription-dates"><span>{ar ? 'البداية' : 'Début'} : {subscription?.start_date ? new Date(subscription.start_date).toLocaleString() : '-'}</span><span>{ar ? 'النهاية' : 'Fin'} : {subscription?.end_date || salon.subscription_end ? new Date(subscription?.end_date || salon.subscription_end).toLocaleString() : '-'}</span>{statusInfo.key === 'active' && <strong>{ar ? 'المتبقي' : 'Restant'} : {countdown(subscription?.end_date || salon.subscription_end)}</strong>}</div>
                   </div>
 
                   {/* Subscription Controls & Action Buttons */}
@@ -590,7 +724,7 @@ export default function SuperAdminDashboard({ session, logout, onEnterSalon }) {
               )
             })}
           </div>
-        )}
+        ))}
 
         {/* Custom Duration Modal (Minutes / Hours / Days + Quick Test Presets) */}
         {customDaysModal && (
